@@ -97,6 +97,14 @@ func SpawnSequencingStage(
 		return err
 	}
 
+	// handle case where batch wasn't closed properly
+	// close it before starting a new one
+	// this occurs when sequencer was switched from syncer or sequencer datastream files were deleted
+	// and datastream was regenerated
+	if err = finalizeLastBatchInDatastreamIfNotFinalized(batchContext, batchState, executionAt); err != nil {
+		return err
+	}
+
 	if batchState.isL1Recovery() {
 		if cfg.zk.L1SyncStopBatch > 0 && batchState.batchNumber > cfg.zk.L1SyncStopBatch {
 			log.Info(fmt.Sprintf("[%s] L1 recovery has completed!", logPrefix), "batch", batchState.batchNumber)

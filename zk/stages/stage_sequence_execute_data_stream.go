@@ -5,12 +5,13 @@ import (
 	"fmt"
 
 	"github.com/ledgerwatch/erigon/core/rawdb"
+	"github.com/ledgerwatch/erigon/core/vm"
+	"github.com/ledgerwatch/erigon/eth/stagedsync"
+	"github.com/ledgerwatch/erigon/eth/stagedsync/stages"
 	"github.com/ledgerwatch/erigon/zk/datastream/server"
 	verifier "github.com/ledgerwatch/erigon/zk/legacy_executor_verifier"
+	"github.com/ledgerwatch/erigon/zk/utils"
 	"github.com/ledgerwatch/log/v3"
-	"github.com/ledgerwatch/erigon/eth/stagedsync/stages"
-	"github.com/ledgerwatch/erigon/eth/stagedsync"
-	"github.com/ledgerwatch/erigon/core/vm"
 )
 
 type SequencerBatchStreamWriter struct {
@@ -84,18 +85,44 @@ func (sbc *SequencerBatchStreamWriter) writeBlockDetailsToDatastream(verifiedBun
 	return checkedVerifierBundles, nil
 }
 
-func handleBatchEndChecks(batchContext *BatchContext, batchState *BatchState, thisBlock uint64, u stagedsync.Unwinder) (bool, error) {
+func finalizeLastBatchInDatastreamIfNotFinalized(batchContext *BatchContext, batchState *BatchState, thisBlock uint64) error {
 	isLastEntryBatchEnd, err := batchContext.cfg.datastreamServer.IsLastEntryBatchEnd()
 	if err != nil {
-		return false, err
+		return err
 	}
 
 	if isLastEntryBatchEnd {
+		return nil
+	}
+
+	log.Warn(fmt.Sprintf("[%s] Last batch %d was not closed properly, closing it now...", batchContext.s.LogPrefix(), batchState.batchNumber))
+	ler, err := utils.GetBatchLocalExitRootFromSCStorage(batchState.batchNumber, batchContext.sdb.hermezDb.HermezDbReader, batchContext.sdb.tx)
+	if err != nil {
+		return err
+	}
+
+	lastBlock, err := rawdb.ReadBlockByNumber(batchContext.sdb.tx, thisBlock)
+	if err != nil {
+		return err
+	}
+	root := lastBlock.Root()
+	if err = batchContext.cfg.datastreamServer.WriteBatchEnd(batchContext.sdb.hermezDb, batchState.batchNumber-1, &root, &ler); err != nil {
+		return err
+	}
+	return nil
+}
+
+func handleBatchEndChecks(batchContext *BatchContext, batchState *BatchState, lastExecutedBlock uint64, u stagedsync.Unwinder) (bool, error) {
+	streamProgress, err := stages.GetStageProgress(batchContext.sdb.tx, stages.DataStream)
+	if err != nil {
+		return false, err
+	}
+	if streamProgress >= lastExecutedBlock {
 		return false, nil
 	}
 
+	// finalize the previous batch
 	lastBatch := batchState.batchNumber - 1
-
 	log.Warn(fmt.Sprintf("[%s] Last batch %d was not closed properly, closing it now...", batchContext.s.LogPrefix(), lastBatch))
 
 	rawCounters, _, err := batchContext.sdb.hermezDb.GetLatestBatchCounters(lastBatch)
@@ -104,37 +131,25 @@ func handleBatchEndChecks(batchContext *BatchContext, batchState *BatchState, th
 	}
 
 	latestCounters := vm.NewCountersFromUsedMap(rawCounters)
-
 	endBatchCounters, err := prepareBatchCounters(batchContext, batchState, latestCounters)
-
-	if err = runBatchLastSteps(batchContext, lastBatch, thisBlock, endBatchCounters); err != nil {
-		return false, err
-	}
-
-	// commit the tx as we want to hold on to the values we just handled and then refresh the tx
-	//if err = batchContext.sdb.CommitAndStart(); err != nil {
-	//	return false, err
-	//}
-
-	// now check if there is a gap in the stream vs the state db
-	streamProgress, err := stages.GetStageProgress(batchContext.sdb.tx, stages.DataStream)
 	if err != nil {
 		return false, err
 	}
 
-	unwinding := false
-	if streamProgress > 0 && streamProgress < thisBlock {
-		block, err := rawdb.ReadBlockByNumber(batchContext.sdb.tx, streamProgress)
-		if err != nil {
-			return true, err
-		}
-		log.Warn(fmt.Sprintf("[%s] Unwinding due to a datastream gap", batchContext.s.LogPrefix()),
-			"streamHeight", streamProgress,
-			"sequencerHeight", thisBlock,
-		)
-		u.UnwindTo(streamProgress, block.Hash())
-		unwinding = true
+	if err = runBatchLastSteps(batchContext, lastBatch, lastExecutedBlock, endBatchCounters); err != nil {
+		return false, err
 	}
 
-	return unwinding, nil
+	// unwind
+	block, err := rawdb.ReadBlockByNumber(batchContext.sdb.tx, streamProgress)
+	if err != nil {
+		return true, err
+	}
+	log.Warn(fmt.Sprintf("[%s] Unwinding due to a datastream gap", batchContext.s.LogPrefix()),
+		"streamHeight", streamProgress,
+		"sequencerHeight", lastExecutedBlock,
+	)
+
+	u.UnwindTo(streamProgress, block.Hash())
+	return true, nil
 }

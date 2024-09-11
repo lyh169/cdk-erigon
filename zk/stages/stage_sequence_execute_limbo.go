@@ -73,6 +73,6 @@ func handleLimbo(batchContext *BatchContext, batchState *BatchState, verifierBun
 		}
 	}
 
-	batchContext.cfg.txPool.ProcessLimboBatchDetails(limboDetails)
+	batchContext.cfg.txPool.ProcessUncheckedLimboBatchDetails(limboDetails)
 	return nil
 }

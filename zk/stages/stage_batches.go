@@ -319,7 +319,9 @@ LOOP:
 				// if it's above our height in more than a 1 increment, we have a big problem
 				if entry.L2BlockNumber > lastBlockHeight+1 {
 					log.Warn("STREAM HAS SKIPPED!!!!", "lastBlockHeight", lastBlockHeight, "entry.L2BlockNumber", entry.L2BlockNumber)
-					panic("stream gap detected")
+
+					// here we should set stage progress to the 'actual progress' and send the stage loop round again
+					return saveStageProgress(tx, logPrefix, highestHashableL2BlockNo, highestSeenBatchNo, lastBlockHeight, lastForkId)
 				}
 
 				// batch boundary - record the highest hashable block number (last block in last full batch)

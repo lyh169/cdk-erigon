@@ -161,7 +161,7 @@ func (c *StreamClient) StartStreaming() {
 					if failCount >= retriesBeforeWarning {
 						log.Warn(fmt.Sprintf("Failed to reconnect the datastream client after %d tries: %s", failCount, err))
 					}
-					time.Sleep(5 * time.Second)
+					time.Sleep(500 * time.Millisecond)
 					continue
 				}
 				log.Info("[datastream_client] Datastream client connected.")
@@ -170,6 +170,7 @@ func (c *StreamClient) StartStreaming() {
 			}
 
 			if err := c.ReadAllEntriesToChannel(); err != nil {
+				c.setStatusStable(false)
 				log.Warn(fmt.Sprintf("Failed to read all entries to slice manager: %s", err))
 
 				// Close the connection on failure
@@ -179,7 +180,6 @@ func (c *StreamClient) StartStreaming() {
 					c.conn = nil
 				}
 
-				c.setStatusStable(false)
 				time.Sleep(2 * time.Second)
 				continue
 			}

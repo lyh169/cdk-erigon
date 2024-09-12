@@ -195,15 +195,15 @@ func SpawnStageBatches(
 	lastBlockRoot := emptyHash
 
 	// STAGE EXIT/WAIT CONTROL VARS
-	noEntryLoopCount := 0
-	noEntryLoopLimit := 20
+	noEntriesSleepCount := 0
+	noEntriesSleepLimit := 20
 	instabilitySleepCount := 0
 	instabilitySleepLimit := 100
 
 	// slice manager offset
 	offset := 0
 
-	log.Info(fmt.Sprintf("[%s] Reading blocks from the datastream.", logPrefix))
+	log.Info(fmt.Sprintf("[%s] Reading blocks from the datastream slice manager.", logPrefix))
 
 	// loop consumes from slice manager which is populated by the stream_client reading continuously from the datastream
 LOOP:
@@ -215,7 +215,9 @@ LOOP:
 		default:
 			entries := dsSliceManager.ReadCurrentItemsWithOffset(offset)
 
-			// TODO: move the clearing down of the slice to the manager - at the end of the loop on no error - and ensure that we just remove from the start of the slice for n entries where len(entries) == n
+			// TODO: we may need to move this down!
+			// add the consumed entries from slice manager to the 'offset'
+			offset += len(entries)
 
 			// STAGE EXIT/WAIT CONTROL
 			// no items returned - either stream is disconnected,
@@ -232,13 +234,15 @@ LOOP:
 				}
 
 				// if we've looped a few times without any entries, we can assume we've consumed all available data
-				noEntryLoopCount++
-				if noEntryLoopCount < noEntryLoopLimit {
+				noEntriesSleepCount++
+				if noEntriesSleepCount < noEntriesSleepLimit {
 					time.Sleep(1 * time.Second)
 					continue
 				}
 				endLoop = true
 			}
+			noEntriesSleepCount = 0
+			instabilitySleepCount = 0
 			// END: STAGE EXIT/WAIT CONTROL
 
 			// process returned entries
@@ -390,9 +394,6 @@ LOOP:
 					}
 				}
 			}
-
-			// add the consumed entries from slice manager to the 'offset'
-			offset += len(entries)
 
 			// if we've written blocks and we've written more than the progress save threshold, write the db
 			if blocksWritten >= STAGE_PROGRESS_SAVE {

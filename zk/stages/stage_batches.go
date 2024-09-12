@@ -26,6 +26,8 @@ import (
 	"github.com/ledgerwatch/erigon/eth/ethconfig"
 	"github.com/ledgerwatch/erigon/zk/utils"
 	"github.com/ledgerwatch/log/v3"
+	"github.com/ledgerwatch/erigon/zk/datastream/slice_manager"
+	"github.com/ledgerwatch/erigon/zk/datastream/client"
 )
 
 const (
@@ -69,11 +71,12 @@ type HermezDb interface {
 
 type DatastreamClient interface {
 	ReadAllEntriesToChannel() error
-	GetEntryChan() chan interface{}
 	GetLastWrittenTimeAtomic() *atomic.Int64
 	GetStreamingAtomic() *atomic.Bool
 	GetProgressAtomic() *atomic.Uint64
-	EnsureConnected() (bool, error)
+	GetSliceManager() *slice_manager.SliceManager
+	GetStatus() client.Status
+	UpdateProgress(uint64)
 }
 
 type BatchesCfg struct {
@@ -148,52 +151,13 @@ func SpawnStageBatches(
 		return errors.New("could not retrieve l1 verifications batch no progress")
 	}
 
+	// update progress on stream client
 	startSyncTime := time.Now()
 	dsClientProgress := cfg.dsClient.GetProgressAtomic()
 	dsClientProgress.Store(stageProgressBlockNo)
-	// start routine to download blocks and push them in a channel
-	if !cfg.dsClient.GetStreamingAtomic().Load() {
-		log.Info(fmt.Sprintf("[%s] Starting stream", logPrefix), "startBlock", stageProgressBlockNo)
-		// this will download all blocks from datastream and push them in a channel
-		// if no error, break, else continue trying to get them
-		// Create bookmark
 
-		connected := false
-
-		go func() {
-			log.Info(fmt.Sprintf("[%s] Started downloading L2Blocks routine", logPrefix))
-			defer log.Info(fmt.Sprintf("[%s] Finished downloading L2Blocks routine", logPrefix))
-
-			retryAttempts := 0
-			maxRetryAttempts := 5
-
-			for {
-				if !connected {
-					connected, err = cfg.dsClient.EnsureConnected()
-					if err != nil || !connected {
-						log.Error("[datastream_client] Error connecting to datastream", "error", err)
-						retryAttempts++
-						if retryAttempts >= maxRetryAttempts {
-							log.Error("[datastream_client] Max retry attempts reached, exiting")
-							break
-						}
-						time.Sleep(5 * time.Second)
-						continue
-					}
-					retryAttempts = 0
-					log.Info(fmt.Sprintf("[%s] Reconnected to datastream", logPrefix))
-				}
-
-				if err := cfg.dsClient.ReadAllEntriesToChannel(); err != nil {
-					log.Error("[datastream_client] Error downloading blocks from datastream", "error", err)
-					connected = false
-					continue
-				}
-
-				break
-			}
-		}()
-	}
+	// get the slice manager for syncing data between threads
+	dsSliceManager := cfg.dsClient.GetSliceManager()
 
 	// start a routine to print blocks written progress
 	progressChan, stopProgressPrinter := zk.ProgressPrinterWithoutTotal(fmt.Sprintf("[%s] Downloaded blocks from datastream progress", logPrefix))
@@ -228,234 +192,211 @@ func SpawnStageBatches(
 
 	lastHash := emptyHash
 	lastBlockRoot := emptyHash
-	atLeastOneBlockWritten := false
-	startTime := time.Now()
+	prevAmountBlocksWritten := blocksWritten
 
 	log.Info(fmt.Sprintf("[%s] Reading blocks from the datastream.", logPrefix))
 
-	entryChan := cfg.dsClient.GetEntryChan()
-	lastWrittenTimeAtomic := cfg.dsClient.GetLastWrittenTimeAtomic()
-	streamingAtomic := cfg.dsClient.GetStreamingAtomic()
-
-	prevAmountBlocksWritten := blocksWritten
+	// loop consumes from slice manager which is populated by the stream_client reading continuously from the datastream
 LOOP:
 	for {
-		// get batch start and use to update forkid
-		// get block
-		// if no blocks available should block
-		// if download routine finished, should continue to read from channel until it's empty
-		// if both download routine stopped and channel empty - stop loop
 		select {
-		case entry := <-entryChan:
-			switch entry := entry.(type) {
-			case *types.BatchStart:
-				// check if the batch is invalid so that we can replicate this over in the stream
-				// when we re-populate it
-				if entry.BatchType == types.BatchTypeInvalid {
-					if err = hermezDb.WriteInvalidBatch(entry.Number); err != nil {
-						return err
-					}
-					// we need to write the fork here as well because the batch will never get processed as it is invalid
-					// but, we need it re-populate our own stream
-					if err = hermezDb.WriteForkId(entry.Number, entry.ForkId); err != nil {
-						return err
-					}
-				}
-			case *types.BatchEnd:
-				if entry.StateRoot != lastBlockRoot {
-					log.Warn(fmt.Sprintf("[%s] batch end state root mismatches last block's: %x, expected: %x", logPrefix, entry.StateRoot, lastBlockRoot))
-				}
-				// keep a record of the last block processed when we receive the batch end
-				if err = hermezDb.WriteBatchEnd(lastBlockHeight); err != nil {
-					return err
-				}
-			case *types.FullL2Block:
-				if cfg.zkCfg.SyncLimit > 0 && entry.L2BlockNumber >= cfg.zkCfg.SyncLimit {
-					// stop the node going into a crazy loop
-					time.Sleep(2 * time.Second)
-					break LOOP
-				}
-
-				// handle batch boundary changes - we do this here instead of reading the batch start channel because
-				// channels can be read in random orders which then creates problems in detecting fork changes during
-				// execution
-				if entry.BatchNumber > highestSeenBatchNo && lastForkId < entry.ForkId {
-					if entry.ForkId > HIGHEST_KNOWN_FORK {
-						message := fmt.Sprintf("unsupported fork id %v received from the data stream", entry.ForkId)
-						panic(message)
-					}
-					err = stages.SaveStageProgress(tx, stages.ForkId, entry.ForkId)
-					if err != nil {
-						return fmt.Errorf("save stage progress error: %v", err)
-					}
-					lastForkId = entry.ForkId
-					err = hermezDb.WriteForkId(entry.BatchNumber, entry.ForkId)
-					if err != nil {
-						return fmt.Errorf("write fork id error: %v", err)
-					}
-					// NOTE (RPC): avoided use of 'writeForkIdBlockOnce' by reading instead batch by forkId, and then lowest block number in batch
-				}
-
-				// ignore genesis or a repeat of the last block
-				if entry.L2BlockNumber == 0 {
-					continue
-				}
-				// skip but warn on already processed blocks
-				if entry.L2BlockNumber <= stageProgressBlockNo {
-					if entry.L2BlockNumber < stageProgressBlockNo {
-						// only warn if the block is very old, we expect the very latest block to be requested
-						// when the stage is fired up for the first time
-						log.Warn(fmt.Sprintf("[%s] Skipping block %d, already processed", logPrefix, entry.L2BlockNumber))
-					}
-					continue
-				}
-
-				// if we have already seen the block just log and continue
-				if entry.L2BlockNumber <= lastBlockHeight {
-					log.Warn(fmt.Sprintf("[%s] Skipping block %d, already processed", logPrefix, entry.L2BlockNumber))
-					continue
-				}
-
-				// if it's above our height in more than a 1 increment, we have a big problem
-				if entry.L2BlockNumber > lastBlockHeight+1 {
-					log.Warn("STREAM HAS SKIPPED!!!!", "lastBlockHeight", lastBlockHeight, "entry.L2BlockNumber", entry.L2BlockNumber)
-
-					// here we should set stage progress to the 'actual progress' and send the stage loop round again
-					return saveStageProgress(tx, logPrefix, highestHashableL2BlockNo, highestSeenBatchNo, lastBlockHeight, lastForkId)
-				}
-
-				// batch boundary - record the highest hashable block number (last block in last full batch)
-				if entry.BatchNumber > highestSeenBatchNo {
-					highestHashableL2BlockNo = entry.L2BlockNumber - 1
-				}
-				highestSeenBatchNo = entry.BatchNumber
-
-				/////// DEBUG BISECTION ///////
-				// exit stage when debug bisection flags set and we're at the limit block
-				if cfg.zkCfg.DebugLimit > 0 && entry.L2BlockNumber > cfg.zkCfg.DebugLimit {
-					fmt.Printf("[%s] Debug limit reached, stopping stage\n", logPrefix)
-					endLoop = true
-				}
-
-				// if we're above StepAfter, and we're at a step, move the stages on
-				if cfg.zkCfg.DebugStep > 0 && cfg.zkCfg.DebugStepAfter > 0 && entry.L2BlockNumber > cfg.zkCfg.DebugStepAfter {
-					if entry.L2BlockNumber%cfg.zkCfg.DebugStep == 0 {
-						fmt.Printf("[%s] Debug step reached, stopping stage\n", logPrefix)
-						endLoop = true
-					}
-				}
-				/////// END DEBUG BISECTION ///////
-
-				// store our finalized state if this batch matches the highest verified batch number on the L1
-				if entry.BatchNumber == highestVerifiedBatch {
-					rawdb.WriteForkchoiceFinalized(tx, entry.L2Blockhash)
-				}
-
-				if lastHash != emptyHash {
-					entry.ParentHash = lastHash
-				} else {
-					// first block in the loop so read the parent hash
-					previousHash, err := eriDb.ReadCanonicalHash(entry.L2BlockNumber - 1)
-					if err != nil {
-						return fmt.Errorf("failed to get genesis header: %v", err)
-					}
-					entry.ParentHash = previousHash
-				}
-
-				if err := writeL2Block(eriDb, hermezDb, entry, highestL1InfoTreeIndex); err != nil {
-					return fmt.Errorf("writeL2Block error: %v", err)
-				}
-				dsClientProgress.Store(entry.L2BlockNumber)
-
-				// make sure to capture the l1 info tree index changes so we can store progress
-				if uint64(entry.L1InfoTreeIndex) > highestL1InfoTreeIndex {
-					highestL1InfoTreeIndex = uint64(entry.L1InfoTreeIndex)
-				}
-
-				lastHash = entry.L2Blockhash
-				lastBlockRoot = entry.StateRoot
-
-				atLeastOneBlockWritten = true
-				lastBlockHeight = entry.L2BlockNumber
-				blocksWritten++
-				progressChan <- blocksWritten
-
-				if endLoop && cfg.zkCfg.DebugLimit > 0 {
-					break LOOP
-				}
-			case *types.GerUpdate:
-				if entry.GlobalExitRoot == emptyHash {
-					log.Warn(fmt.Sprintf("[%s] Skipping GER update with empty root", logPrefix))
-					break
-				}
-
-				// NB: we won't get these post Etrog (fork id 7)
-				if err := hermezDb.WriteBatchGlobalExitRoot(entry.BatchNumber, entry); err != nil {
-					return fmt.Errorf("write batch global exit root error: %v", err)
-				}
-			}
 		case <-ctx.Done():
 			log.Warn(fmt.Sprintf("[%s] Context done", logPrefix))
 			endLoop = true
 		default:
-			if atLeastOneBlockWritten {
-				// first check to see if anything has come in from the stream yet, if it has then wait a little longer
-				// because there could be more.
-				// if no blocks available should and time since last block written is > 500ms
-				// consider that we are at the tip and blocks come in the datastream as they are produced
-				// stop the current iteration of the stage
-				lastWrittenTs := lastWrittenTimeAtomic.Load()
-				timePassedAfterlastBlock := time.Since(time.Unix(0, lastWrittenTs))
-				if timePassedAfterlastBlock > cfg.zkCfg.DatastreamNewBlockTimeout {
-					log.Info(fmt.Sprintf("[%s] No new blocks in %d miliseconds. Ending the stage.", logPrefix, timePassedAfterlastBlock.Milliseconds()), "lastBlockHeight", lastBlockHeight)
-					endLoop = true
-				}
-			} else {
-				timePassedAfterlastBlock := time.Since(startTime)
-				if timePassedAfterlastBlock.Seconds() > 10 {
-					// if the connection ropped, continue with next stages while it tries to reconnect
-					// otherwise it will get stuck in "waiting for at least one block to be written" loop
-					// if !streamingAtomic.Load() {
-					// 	endLoop = true
-					// 	break
-					// }
+			entries := dsSliceManager.ConsumeCurrentItems()
 
-					if !streamingAtomic.Load() {
-						log.Info(fmt.Sprintf("[%s] Datastream disconnected. Ending the stage.", logPrefix))
+			// no items returned - either stream is disconnected,
+			// or we've consumed all available data and can move the stage loop on
+			if len(entries) == 0 {
+				if !cfg.dsClient.GetStatus().Stable {
+					// wait for stream to become stable again
+					// TODO: we probably need a stability timeout which is long (c. 5-10 minutes?)
+					time.Sleep(1 * time.Second)
+					continue
+				}
+			}
+
+			// process returned entries
+			for _, entry := range entries {
+				switch entry := entry.(type) {
+				case *types.BatchStart:
+					// check if the batch is invalid so that we can replicate this over in the stream
+					// when we re-populate it
+					if entry.BatchType == types.BatchTypeInvalid {
+						if err = hermezDb.WriteInvalidBatch(entry.Number); err != nil {
+							return err
+						}
+						// we need to write the fork here as well because the batch will never get processed as it is invalid
+						// but, we need it re-populate our own stream
+						if err = hermezDb.WriteForkId(entry.Number, entry.ForkId); err != nil {
+							return err
+						}
+					}
+				case *types.BatchEnd:
+					if entry.StateRoot != lastBlockRoot {
+						log.Warn(fmt.Sprintf("[%s] batch end state root mismatches last block's: %x, expected: %x", logPrefix, entry.StateRoot, lastBlockRoot))
+					}
+					// keep a record of the last block processed when we receive the batch end
+					if err = hermezDb.WriteBatchEnd(lastBlockHeight); err != nil {
+						return err
+					}
+				case *types.FullL2Block:
+					if cfg.zkCfg.SyncLimit > 0 && entry.L2BlockNumber >= cfg.zkCfg.SyncLimit {
+						// stop the node going into a crazy loop
+						time.Sleep(2 * time.Second)
 						break LOOP
 					}
 
-					log.Info(fmt.Sprintf("[%s] Waiting for at least one new block.", logPrefix))
-					startTime = time.Now()
+					// handle batch boundary changes - we do this here instead of reading the batch start channel because
+					// channels can be read in random orders which then creates problems in detecting fork changes during
+					// execution
+					if entry.BatchNumber > highestSeenBatchNo && lastForkId < entry.ForkId {
+						if entry.ForkId > HIGHEST_KNOWN_FORK {
+							message := fmt.Sprintf("unsupported fork id %v received from the data stream", entry.ForkId)
+							panic(message)
+						}
+						err = stages.SaveStageProgress(tx, stages.ForkId, entry.ForkId)
+						if err != nil {
+							return fmt.Errorf("save stage progress error: %v", err)
+						}
+						lastForkId = entry.ForkId
+						err = hermezDb.WriteForkId(entry.BatchNumber, entry.ForkId)
+						if err != nil {
+							return fmt.Errorf("write fork id error: %v", err)
+						}
+						// NOTE (RPC): avoided use of 'writeForkIdBlockOnce' by reading instead batch by forkId, and then lowest block number in batch
+					}
+
+					// ignore genesis or a repeat of the last block
+					if entry.L2BlockNumber == 0 {
+						continue
+					}
+					// skip but warn on already processed blocks
+					if entry.L2BlockNumber <= stageProgressBlockNo {
+						if entry.L2BlockNumber < stageProgressBlockNo {
+							// only warn if the block is very old, we expect the very latest block to be requested
+							// when the stage is fired up for the first time
+							log.Warn(fmt.Sprintf("[%s] Skipping block %d, already processed", logPrefix, entry.L2BlockNumber))
+						}
+						continue
+					}
+
+					// if we have already seen the block just log and continue
+					if entry.L2BlockNumber <= lastBlockHeight {
+						log.Warn(fmt.Sprintf("[%s] Skipping block %d, already processed", logPrefix, entry.L2BlockNumber))
+						continue
+					}
+
+					// if it's above our height in more than a 1 increment, we have a big problem
+					if entry.L2BlockNumber > lastBlockHeight+1 {
+						log.Warn("STREAM HAS SKIPPED!!!!", "lastBlockHeight", lastBlockHeight, "entry.L2BlockNumber", entry.L2BlockNumber)
+
+						// here we should set stage progress to the 'actual progress' and send the stage loop round again
+						return saveStageProgress(tx, logPrefix, highestHashableL2BlockNo, highestSeenBatchNo, lastBlockHeight, lastForkId)
+					}
+
+					// batch boundary - record the highest hashable block number (last block in last full batch)
+					if entry.BatchNumber > highestSeenBatchNo {
+						highestHashableL2BlockNo = entry.L2BlockNumber - 1
+					}
+					highestSeenBatchNo = entry.BatchNumber
+
+					/////// DEBUG BISECTION ///////
+					// exit stage when debug bisection flags set and we're at the limit block
+					if cfg.zkCfg.DebugLimit > 0 && entry.L2BlockNumber > cfg.zkCfg.DebugLimit {
+						fmt.Printf("[%s] Debug limit reached, stopping stage\n", logPrefix)
+						endLoop = true
+					}
+
+					// if we're above StepAfter, and we're at a step, move the stages on
+					if cfg.zkCfg.DebugStep > 0 && cfg.zkCfg.DebugStepAfter > 0 && entry.L2BlockNumber > cfg.zkCfg.DebugStepAfter {
+						if entry.L2BlockNumber%cfg.zkCfg.DebugStep == 0 {
+							fmt.Printf("[%s] Debug step reached, stopping stage\n", logPrefix)
+							endLoop = true
+						}
+					}
+					/////// END DEBUG BISECTION ///////
+
+					// store our finalized state if this batch matches the highest verified batch number on the L1
+					if entry.BatchNumber == highestVerifiedBatch {
+						rawdb.WriteForkchoiceFinalized(tx, entry.L2Blockhash)
+					}
+
+					if lastHash != emptyHash {
+						entry.ParentHash = lastHash
+					} else {
+						// first block in the loop so read the parent hash
+						previousHash, err := eriDb.ReadCanonicalHash(entry.L2BlockNumber - 1)
+						if err != nil {
+							return fmt.Errorf("failed to get genesis header: %v", err)
+						}
+						entry.ParentHash = previousHash
+					}
+
+					if err := writeL2Block(eriDb, hermezDb, entry, highestL1InfoTreeIndex); err != nil {
+						return fmt.Errorf("writeL2Block error: %v", err)
+					}
+					dsClientProgress.Store(entry.L2BlockNumber)
+
+					// make sure to capture the l1 info tree index changes so we can store progress
+					if uint64(entry.L1InfoTreeIndex) > highestL1InfoTreeIndex {
+						highestL1InfoTreeIndex = uint64(entry.L1InfoTreeIndex)
+					}
+
+					lastHash = entry.L2Blockhash
+					lastBlockRoot = entry.StateRoot
+
+					lastBlockHeight = entry.L2BlockNumber
+					blocksWritten++
+					progressChan <- blocksWritten
+
+					if endLoop && cfg.zkCfg.DebugLimit > 0 {
+						break LOOP
+					}
+				case *types.GerUpdate:
+					if entry.GlobalExitRoot == emptyHash {
+						log.Warn(fmt.Sprintf("[%s] Skipping GER update with empty root", logPrefix))
+						break
+					}
+
+					// NB: we won't get these post Etrog (fork id 7)
+					if err := hermezDb.WriteBatchGlobalExitRoot(entry.BatchNumber, entry); err != nil {
+						return fmt.Errorf("write batch global exit root error: %v", err)
+					}
 				}
 			}
-			time.Sleep(10 * time.Millisecond)
-		}
 
-		if blocksWritten != prevAmountBlocksWritten && blocksWritten%STAGE_PROGRESS_SAVE == 0 {
-			if err = saveStageProgress(tx, logPrefix, highestHashableL2BlockNo, highestSeenBatchNo, lastBlockHeight, lastForkId); err != nil {
-				return err
-			}
-			if err := hermezDb.WriteBlockL1InfoTreeIndexProgress(lastBlockHeight, highestL1InfoTreeIndex); err != nil {
-				return err
+			if blocksWritten != prevAmountBlocksWritten && blocksWritten%STAGE_PROGRESS_SAVE == 0 {
+				if err = saveStageProgress(tx, logPrefix, highestHashableL2BlockNo, highestSeenBatchNo, lastBlockHeight, lastForkId); err != nil {
+					return err
+				}
+				if err := hermezDb.WriteBlockL1InfoTreeIndexProgress(lastBlockHeight, highestL1InfoTreeIndex); err != nil {
+					return err
+				}
+
+				// write the progress to the stream_client
+				cfg.dsClient.UpdateProgress(lastBlockHeight)
+
+				// TODO: consider if this is right! stage progress should == ds progress- and the ds shoudl always loop and start
+
+				if err := tx.Commit(); err != nil {
+					return fmt.Errorf("failed to commit tx, %w", err)
+				}
+
+				tx, err = cfg.db.BeginRw(ctx)
+				if err != nil {
+					return fmt.Errorf("failed to open tx, %w", err)
+				}
+				hermezDb = hermez_db.NewHermezDb(tx)
+				eriDb = erigon_db.NewErigonDb(tx)
+				prevAmountBlocksWritten = blocksWritten
 			}
 
-			if err := tx.Commit(); err != nil {
-				return fmt.Errorf("failed to commit tx, %w", err)
+			if endLoop {
+				log.Info(fmt.Sprintf("[%s] Total blocks read: %d", logPrefix, blocksWritten))
+				break
 			}
-
-			tx, err = cfg.db.BeginRw(ctx)
-			if err != nil {
-				return fmt.Errorf("failed to open tx, %w", err)
-			}
-			hermezDb = hermez_db.NewHermezDb(tx)
-			eriDb = erigon_db.NewErigonDb(tx)
-			prevAmountBlocksWritten = blocksWritten
-		}
-
-		if endLoop {
-			log.Info(fmt.Sprintf("[%s] Total blocks read: %d", logPrefix, blocksWritten))
-			break
 		}
 	}
 

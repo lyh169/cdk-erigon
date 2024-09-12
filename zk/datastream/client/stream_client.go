@@ -7,12 +7,14 @@ import (
 	"fmt"
 	"net"
 	"reflect"
-	"sync/atomic"
 	"time"
 
 	"github.com/ledgerwatch/erigon/zk/datastream/proto/github.com/0xPolygonHermez/zkevm-node/state/datastream"
 	"github.com/ledgerwatch/erigon/zk/datastream/types"
 	"github.com/ledgerwatch/log/v3"
+	"sync"
+	"github.com/ledgerwatch/erigon/zk/datastream/slice_manager"
+	"sync/atomic"
 )
 
 type StreamType uint64
@@ -29,6 +31,11 @@ const (
 	versionAddedBlockEnd = 3 // Added block end
 )
 
+type Status struct {
+	Stable   bool
+	Progress uint64
+}
+
 type StreamClient struct {
 	ctx          context.Context
 	server       string // Server address to connect IP:port
@@ -40,12 +47,16 @@ type StreamClient struct {
 	checkTimeout time.Duration     // time to wait for data before reporting an error
 
 	// atomic
-	lastWrittenTime atomic.Int64
 	streaming       atomic.Bool
+	lastWrittenTime atomic.Int64
 	progress        atomic.Uint64
 
-	// Channels
-	entryChan chan interface{}
+	// stream status
+	status      Status
+	statusMutex sync.Mutex
+
+	// data slice for sharing data between goroutines
+	sliceManager *slice_manager.SliceManager
 
 	// keeps track of the latest fork from the stream to assign to l2 blocks
 	currentFork uint64
@@ -64,7 +75,7 @@ const (
 
 // Creates a new client fo datastream
 // server must be in format "url:port"
-func NewClient(ctx context.Context, server string, version int, checkTimeout time.Duration, latestDownloadedForkId uint16) *StreamClient {
+func NewClient(ctx context.Context, server string, version int, checkTimeout time.Duration, latestDownloadedForkId uint16, highestDownloadedBlock uint64) *StreamClient {
 	c := &StreamClient{
 		ctx:          ctx,
 		checkTimeout: checkTimeout,
@@ -72,32 +83,111 @@ func NewClient(ctx context.Context, server string, version int, checkTimeout tim
 		version:      version,
 		streamType:   StSequencer,
 		id:           "",
-		entryChan:    make(chan interface{}, 100000),
 		currentFork:  uint64(latestDownloadedForkId),
 	}
 
+	// set progress
+	if highestDownloadedBlock > 0 {
+		c.progress.Store(highestDownloadedBlock)
+	}
+
+	// data slice for sharing data between go routines
+	c.sliceManager = slice_manager.NewSliceManager()
+
+	// set initial status
+	c.status = Status{
+		Stable: false,
+	}
+
+	// connect and begin streaming data (in goroutine)
+	// TODO: coordinate this routine a bit better!
+	go func() {
+		c.StartStreaming()
+	}()
+
 	return c
+}
+
+func (c *StreamClient) GetSliceManager() *slice_manager.SliceManager {
+	return c.sliceManager
+}
+
+func (c *StreamClient) GetStatus() Status {
+	c.statusMutex.Lock()
+	defer c.statusMutex.Unlock()
+	return c.status
+}
+
+func (c *StreamClient) UpdateProgress(progress uint64) {
+	c.statusMutex.Lock()
+	defer c.statusMutex.Unlock()
+	c.status.Progress = progress
 }
 
 func (c *StreamClient) IsVersion3() bool {
 	return c.version >= versionAddedBlockEnd
 }
 
-func (c *StreamClient) GetEntryChan() chan interface{} {
-	return c.entryChan
-}
 func (c *StreamClient) GetLastWrittenTimeAtomic() *atomic.Int64 {
 	return &c.lastWrittenTime
 }
+
 func (c *StreamClient) GetStreamingAtomic() *atomic.Bool {
 	return &c.streaming
 }
+
 func (c *StreamClient) GetProgressAtomic() *atomic.Uint64 {
 	return &c.progress
 }
 
+func (c *StreamClient) StartStreaming() {
+	c.streaming.Store(true)
+
+	// this function is the 'coordinator' - it should dial, start, and handle error/reconnect for the stream to ensure it never drops!
+
+	retriesBeforeWarning := 10
+	failCount := 0
+
+	for {
+		select {
+		case <-c.ctx.Done():
+			log.Warn("[Datastream client] Context done - stopping")
+			return
+		default:
+			if c.conn == nil {
+				if err := c.start(); err != nil {
+					c.setStatusStable(false)
+					log.Debug(fmt.Sprintf("Failed to reconnect the datastream client: %s", err))
+					failCount++
+					if failCount >= retriesBeforeWarning {
+						log.Warn(fmt.Sprintf("Failed to reconnect the datastream client after %d tries: %s", failCount, err))
+					}
+					time.Sleep(5 * time.Second)
+					continue
+				}
+				log.Info("[datastream_client] Datastream client connected.")
+				failCount = 0
+				c.setStatusStable(true)
+			}
+
+			if err := c.ReadAllEntriesToChannel(); err != nil {
+				log.Warn(fmt.Sprintf("Failed to read all entries to channel: %s", err))
+				c.setStatusStable(false)
+				time.Sleep(2 * time.Second)
+				continue
+			}
+		}
+	}
+}
+
+func (c *StreamClient) setStatusStable(stable bool) {
+	c.statusMutex.Lock()
+	defer c.statusMutex.Unlock()
+	c.status.Stable = stable
+}
+
 // Opens a TCP connection to the server
-func (c *StreamClient) Start() error {
+func (c *StreamClient) start() error {
 	// Connect to server
 	var err error
 	c.conn, err = net.Dial("tcp", c.server)
@@ -115,106 +205,28 @@ func (c *StreamClient) Stop() {
 		log.Warn(fmt.Sprintf("Failed to send the stop command to the data stream server: %s", err))
 	}
 	c.conn.Close()
-
-	close(c.entryChan)
 }
 
-// Command header: Get status
-// Returns the current status of the header.
-// If started, terminate the connection.
-func (c *StreamClient) GetHeader() error {
-	if err := c.sendHeaderCmd(); err != nil {
-		return fmt.Errorf("%s send header error: %v", c.id, err)
-	}
+// TODO: this should just happen as a consequence of reading the stream and managing the connection
+//func (c *StreamClient) EnsureConnected() (bool, error) {
+//	if c.conn == nil {
+//		if err := c.tryReConnect(); err != nil {
+//			return false, fmt.Errorf("failed to reconnect the datastream client: %w", err)
+//		}
+//		log.Info("[datastream_client] Datastream client connected.")
+//	}
+//
+//	return true, nil
+//}
 
-	// Read packet
-	packet, err := readBuffer(c.conn, 1)
-	if err != nil {
-		return fmt.Errorf("%s read buffer: %v", c.id, err)
-	}
-
-	// Check packet type
-	if packet[0] != PtResult {
-		return fmt.Errorf("%s error expecting result packet type %d and received %d", c.id, PtResult, packet[0])
-	}
-
-	// Read server result entry for the command
-	r, err := c.readResultEntry(packet)
-	if err != nil {
-		return fmt.Errorf("%s read result entry error: %v", c.id, err)
-	}
-	if err := r.GetError(); err != nil {
-		return fmt.Errorf("%s got Result error code %d: %v", c.id, r.ErrorNum, err)
-	}
-
-	// Read header entry
-	h, err := c.readHeaderEntry()
-	if err != nil {
-		return fmt.Errorf("%s read header entry error: %v", c.id, err)
-	}
-
-	c.Header = *h
-
-	return nil
-}
-
-func (c *StreamClient) ExecutePerFile(bookmark *types.BookmarkProto, function func(file *types.FileEntry) error) error {
-	// Get header from server
-	if err := c.GetHeader(); err != nil {
-		return fmt.Errorf("%s get header error: %v", c.id, err)
-	}
-
-	protoBookmark, err := bookmark.Marshal()
-	if err != nil {
-		return fmt.Errorf("failed to marshal bookmark: %v", err)
-	}
-
-	if err := c.initiateDownloadBookmark(protoBookmark); err != nil {
-		return err
-	}
-	count := uint64(0)
-	logTicker := time.NewTicker(10 * time.Second)
-
-	for {
-		select {
-		case <-logTicker.C:
-			fmt.Println("Entries read count: ", count)
-		default:
-		}
-		if c.Header.TotalEntries == count {
-			break
-		}
-		file, err := c.readFileEntry()
-		if err != nil {
-			return fmt.Errorf("reading file entry: %v", err)
-		}
-		if err := function(file); err != nil {
-			return fmt.Errorf("executing function: %v", err)
-
-		}
-		count++
-	}
-
-	return nil
-}
-
-func (c *StreamClient) EnsureConnected() (bool, error) {
-	if c.conn == nil {
-		if err := c.tryReConnect(); err != nil {
-			return false, fmt.Errorf("failed to reconnect the datastream client: %w", err)
-		}
-		log.Info("[datastream_client] Datastream client connected.")
-	}
-
-	return true, nil
-}
+// TODO: replace with a call to get the status
+//func (c *StreamClient) Connected() bool {
+//	return c.conn != nil
+//}
 
 // reads entries to the end of the stream
 // at end will wait for new entries to arrive
 func (c *StreamClient) ReadAllEntriesToChannel() error {
-	c.streaming.Store(true)
-	defer c.streaming.Store(false)
-
 	var bookmark *types.BookmarkProto
 	progress := c.progress.Load()
 	if progress == 0 {
@@ -232,35 +244,7 @@ func (c *StreamClient) ReadAllEntriesToChannel() error {
 		return err
 	}
 
-	errChan := make(chan error, 1)
-
-	go func() {
-		errChan <- c.readAllFullL2BlocksToChannel()
-	}()
-
-	select {
-	case <-c.ctx.Done():
-		if c.conn != nil {
-			if closeErr := c.conn.Close(); closeErr != nil {
-				log.Error("failed to close connection after context cancellation", "error", closeErr)
-			}
-			c.conn = nil
-		}
-		return c.ctx.Err()
-	case err := <-errChan:
-		if err != nil {
-			err2 := fmt.Errorf("%s read full L2 blocks error: %w", c.id, err)
-			if c.conn != nil {
-				if closeErr := c.conn.Close(); closeErr != nil {
-					log.Error("failed to close connection after error", "original-error", err, "new-error", closeErr)
-				}
-				c.conn = nil
-			}
-			return err2
-		}
-	}
-
-	return nil
+	return c.readAllFullL2BlocksToChannel()
 }
 
 // runs the prerequisites for entries download
@@ -327,15 +311,15 @@ LOOP:
 			continue
 		case *types.BatchStart:
 			c.currentFork = parsedProto.ForkId
-			c.entryChan <- parsedProto
+			c.sliceManager.AddItem(parsedProto)
 		case *types.GerUpdate:
-			c.entryChan <- parsedProto
+			c.sliceManager.AddItem(parsedProto)
 		case *types.BatchEnd:
-			c.entryChan <- parsedProto
+			c.sliceManager.AddItem(parsedProto)
 		case *types.FullL2Block:
 			parsedProto.ForkId = c.currentFork
 			log.Trace("writing block to channel", "blockNumber", parsedProto.L2BlockNumber, "batchNumber", parsedProto.BatchNumber)
-			c.entryChan <- parsedProto
+			c.sliceManager.AddItem(parsedProto)
 		default:
 			err = fmt.Errorf("unexpected entry type: %v", parsedProto)
 			break LOOP
@@ -345,24 +329,25 @@ LOOP:
 	return err
 }
 
-func (c *StreamClient) tryReConnect() error {
-	var err error
-	for i := 0; i < 50; i++ {
-		if c.conn != nil {
-			if err := c.conn.Close(); err != nil {
-				return err
-			}
-			c.conn = nil
-		}
-		if err = c.Start(); err != nil {
-			time.Sleep(5 * time.Second)
-			continue
-		}
-		return nil
-	}
-
-	return err
-}
+//func (c *StreamClient) tryReConnect() error {
+//	var err error
+//	for i := 0; i < 50; i++ {
+//		if c.conn != nil {
+//			if err := c.conn.Close(); err != nil {
+//				return err
+//			}
+//			c.conn = nil
+//		}
+//		if err = c.start(); err != nil {
+//			log.Warn(fmt.Sprintf("Failed to reconnect the datastream client (%d/%d): %s", err, i, 50))
+//			time.Sleep(5 * time.Second)
+//			continue
+//		}
+//		return nil
+//	}
+//
+//	return err
+//}
 
 func (c *StreamClient) readParsedProto() (
 	parsedEntry interface{},
@@ -564,4 +549,84 @@ func (c *StreamClient) readResultEntry(packet []byte) (re *types.ResultEntry, er
 	}
 
 	return re, nil
+}
+
+// Command header: Get status
+// Returns the current status of the header.
+// If started, terminate the connection.
+func (c *StreamClient) GetHeader() error {
+	if err := c.sendHeaderCmd(); err != nil {
+		return fmt.Errorf("%s send header error: %v", c.id, err)
+	}
+
+	// Read packet
+	packet, err := readBuffer(c.conn, 1)
+	if err != nil {
+		return fmt.Errorf("%s read buffer: %v", c.id, err)
+	}
+
+	// Check packet type
+	if packet[0] != PtResult {
+		return fmt.Errorf("%s error expecting result packet type %d and received %d", c.id, PtResult, packet[0])
+	}
+
+	// Read server result entry for the command
+	r, err := c.readResultEntry(packet)
+	if err != nil {
+		return fmt.Errorf("%s read result entry error: %v", c.id, err)
+	}
+	if err := r.GetError(); err != nil {
+		return fmt.Errorf("%s got Result error code %d: %v", c.id, r.ErrorNum, err)
+	}
+
+	// Read header entry
+	h, err := c.readHeaderEntry()
+	if err != nil {
+		return fmt.Errorf("%s read header entry error: %v", c.id, err)
+	}
+
+	c.Header = *h
+
+	return nil
+}
+
+// TODO: only used in correctness checker!
+func (c *StreamClient) ExecutePerFile(bookmark *types.BookmarkProto, function func(file *types.FileEntry) error) error {
+	// Get header from server
+	if err := c.GetHeader(); err != nil {
+		return fmt.Errorf("%s get header error: %v", c.id, err)
+	}
+
+	protoBookmark, err := bookmark.Marshal()
+	if err != nil {
+		return fmt.Errorf("failed to marshal bookmark: %v", err)
+	}
+
+	if err := c.initiateDownloadBookmark(protoBookmark); err != nil {
+		return err
+	}
+	count := uint64(0)
+	logTicker := time.NewTicker(10 * time.Second)
+
+	for {
+		select {
+		case <-logTicker.C:
+			fmt.Println("Entries read count: ", count)
+		default:
+		}
+		if c.Header.TotalEntries == count {
+			break
+		}
+		file, err := c.readFileEntry()
+		if err != nil {
+			return fmt.Errorf("reading file entry: %v", err)
+		}
+		if err := function(file); err != nil {
+			return fmt.Errorf("executing function: %v", err)
+
+		}
+		count++
+	}
+
+	return nil
 }

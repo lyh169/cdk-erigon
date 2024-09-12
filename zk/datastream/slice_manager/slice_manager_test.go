@@ -125,3 +125,116 @@ func TestSliceManager_NoDeadlock(t *testing.T) {
 
 	wg.Wait()
 }
+
+func TestSliceManager_ReadCurrentItems(t *testing.T) {
+	sm := &SliceManager{}
+
+	items := []interface{}{"item1", "item2", "item3"}
+	sm.AddItems(items)
+
+	// read
+	readItems := sm.ReadCurrentItems()
+	if len(readItems) != 3 {
+		t.Errorf("Expected 3 items, got %d", len(readItems))
+	}
+
+	// readonly test
+	if len(sm.ReadCurrentItems()) != 3 {
+		t.Errorf("Expected 3 items after reading, but got %d", len(sm.ReadCurrentItems()))
+	}
+}
+
+func TestSliceManager_RemoveRange(t *testing.T) {
+	sm := &SliceManager{}
+
+	items := []interface{}{"item1", "item2", "item3", "item4", "item5"}
+	sm.AddItems(items)
+
+	// normal
+	sm.RemoveRange(1, 2)
+
+	remainingItems := sm.ReadCurrentItems()
+	if len(remainingItems) != 3 {
+		t.Errorf("Expected 3 items after removal, got %d", len(remainingItems))
+	}
+
+	if remainingItems[0] != "item1" || remainingItems[1] != "item4" || remainingItems[2] != "item5" {
+		t.Errorf("Items not as expected after removal: %+v", remainingItems)
+	}
+
+	// length too long
+	sm.RemoveRange(1, 10)
+	if len(sm.ReadCurrentItems()) != 1 {
+		t.Errorf("Expected 1 item after removing an out-of-bounds range, got %d", len(sm.ReadCurrentItems()))
+	}
+
+	// offset too long
+	sm.RemoveRange(10, 1)
+	if len(sm.ReadCurrentItems()) != 1 {
+		t.Errorf("Expected 1 item after removing with offset beyond slice length, got %d", len(sm.ReadCurrentItems()))
+	}
+}
+
+func TestSliceManager_ReadCurrentItemsWithOffset(t *testing.T) {
+	sm := &SliceManager{}
+
+	// add items
+	items := []interface{}{"item1", "item2", "item3", "item4", "item5"}
+	sm.AddItems(items)
+
+	// read from offset 2
+	readItems := sm.ReadCurrentItemsWithOffset(2)
+	if len(readItems) != 3 {
+		t.Errorf("Expected 3 items, got %d", len(readItems))
+	}
+
+	expected := []interface{}{"item3", "item4", "item5"}
+	for i, item := range expected {
+		if readItems[i] != item {
+			t.Errorf("Expected %v at index %d, but got %v", item, i, readItems[i])
+		}
+	}
+
+	// read with offset too long
+	readItems = sm.ReadCurrentItemsWithOffset(10)
+	if len(readItems) != 0 {
+		t.Errorf("Expected 0 items with out-of-bounds offset, got %d", len(readItems))
+	}
+}
+
+func TestSliceManager_RemoveUntilOffset(t *testing.T) {
+	sm := &SliceManager{}
+
+	// add items
+	items := []interface{}{"item1", "item2", "item3", "item4", "item5"}
+	sm.AddItems(items)
+
+	// remove until offset 2
+	sm.RemoveUntilOffset(2)
+	remainingItems := sm.ReadCurrentItems()
+	if len(remainingItems) != 3 {
+		t.Errorf("Expected 3 items after removing until offset 2, got %d", len(remainingItems))
+	}
+
+	expected := []interface{}{"item3", "item4", "item5"}
+	for i, item := range expected {
+		if remainingItems[i] != item {
+			t.Errorf("Expected %v at index %d, but got %v", item, i, remainingItems[i])
+		}
+	}
+
+	// remove until offset too long
+	sm.RemoveUntilOffset(10)
+	remainingItems = sm.ReadCurrentItems()
+	if len(remainingItems) != 0 {
+		t.Errorf("Expected 0 items after removing with offset exceeding slice length, got %d", len(remainingItems))
+	}
+
+	// remove with offset equal to the slice length
+	sm.AddItems(items)
+	sm.RemoveUntilOffset(len(items))
+	remainingItems = sm.ReadCurrentItems()
+	if len(remainingItems) != 0 {
+		t.Errorf("Expected 0 items after removing all items, got %d", len(remainingItems))
+	}
+}

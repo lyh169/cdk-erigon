@@ -962,7 +962,7 @@ func New(stack *node.Node, config *ethconfig.Config) (*Ethereum, error) {
 
 			*/
 			latestForkId, err := stages.GetStageProgress(tx, stages.ForkId)
-			highestDownloadedBlock, err := stages.GetStageProgress(tx, stages.DataStream)
+			highestDownloadedBlock, err := stages.GetStageProgress(tx, stages.Batches)
 			if err != nil {
 				return nil, err
 			}

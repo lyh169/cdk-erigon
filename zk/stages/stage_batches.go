@@ -32,7 +32,7 @@ import (
 
 const (
 	HIGHEST_KNOWN_FORK  = 12
-	STAGE_PROGRESS_SAVE = 3000000
+	STAGE_PROGRESS_SAVE = 1_000_000
 )
 
 type ErigonDb interface {
@@ -160,7 +160,7 @@ func SpawnStageBatches(
 	dsSliceManager := cfg.dsClient.GetSliceManager()
 
 	// start a routine to print blocks written progress
-	progressChan, stopProgressPrinter := zk.ProgressPrinterWithoutTotal(fmt.Sprintf("[%s] Downloaded blocks from datastream progress", logPrefix))
+	progressChan, stopProgressPrinter := zk.ProgressPrinterCumulative(fmt.Sprintf("[%s] Downloaded blocks from datastream progress", logPrefix))
 	defer stopProgressPrinter()
 
 	lastBlockHeight := stageProgressBlockNo
@@ -179,20 +179,29 @@ func SpawnStageBatches(
 		return fmt.Errorf("failed to get last fork id, %w", err)
 	}
 
-	stageExecProgress, err := stages.GetStageProgress(tx, stages.Execution)
-	if err != nil {
-		return fmt.Errorf("failed to get stage exec progress, %w", err)
-	}
+	// TODO: uncomment
+	//stageExecProgress, err := stages.GetStageProgress(tx, stages.Execution)
+	//if err != nil {
+	//	return fmt.Errorf("failed to get stage exec progress, %w", err)
+	//}
 
 	// just exit the stage early if there is more execution work to do
-	if stageExecProgress < lastBlockHeight {
-		log.Info(fmt.Sprintf("[%s] Execution behind, skipping stage", logPrefix))
-		return nil
-	}
+	//if stageExecProgress < lastBlockHeight {
+	//	log.Info(fmt.Sprintf("[%s] Execution behind, skipping stage", logPrefix))
+	//	return nil
+	//}
 
 	lastHash := emptyHash
 	lastBlockRoot := emptyHash
-	prevAmountBlocksWritten := blocksWritten
+
+	// STAGE EXIT/WAIT CONTROL VARS
+	noEntryLoopCount := 0
+	noEntryLoopLimit := 20
+	instabilitySleepCount := 0
+	instabilitySleepLimit := 100
+
+	// slice manager offset
+	offset := 0
 
 	log.Info(fmt.Sprintf("[%s] Reading blocks from the datastream.", logPrefix))
 
@@ -204,18 +213,33 @@ LOOP:
 			log.Warn(fmt.Sprintf("[%s] Context done", logPrefix))
 			endLoop = true
 		default:
-			entries := dsSliceManager.ConsumeCurrentItems()
+			entries := dsSliceManager.ReadCurrentItemsWithOffset(offset)
 
+			// TODO: move the clearing down of the slice to the manager - at the end of the loop on no error - and ensure that we just remove from the start of the slice for n entries where len(entries) == n
+
+			// STAGE EXIT/WAIT CONTROL
 			// no items returned - either stream is disconnected,
 			// or we've consumed all available data and can move the stage loop on
 			if len(entries) == 0 {
 				if !cfg.dsClient.GetStatus().Stable {
-					// wait for stream to become stable again
-					// TODO: we probably need a stability timeout which is long (c. 5-10 minutes?)
+					// wait for stream to become stable again (or end loop after limit reached)
+					instabilitySleepCount++
+					if instabilitySleepCount < instabilitySleepLimit {
+						time.Sleep(1 * time.Second)
+						continue
+					}
+					endLoop = true
+				}
+
+				// if we've looped a few times without any entries, we can assume we've consumed all available data
+				noEntryLoopCount++
+				if noEntryLoopCount < noEntryLoopLimit {
 					time.Sleep(1 * time.Second)
 					continue
 				}
+				endLoop = true
 			}
+			// END: STAGE EXIT/WAIT CONTROL
 
 			// process returned entries
 			for _, entry := range entries {
@@ -349,7 +373,7 @@ LOOP:
 
 					lastBlockHeight = entry.L2BlockNumber
 					blocksWritten++
-					progressChan <- blocksWritten
+					progressChan <- 1
 
 					if endLoop && cfg.zkCfg.DebugLimit > 0 {
 						break LOOP
@@ -367,18 +391,17 @@ LOOP:
 				}
 			}
 
-			if blocksWritten != prevAmountBlocksWritten && blocksWritten%STAGE_PROGRESS_SAVE == 0 {
+			// add the consumed entries from slice manager to the 'offset'
+			offset += len(entries)
+
+			// if we've written blocks and we've written more than the progress save threshold, write the db
+			if blocksWritten >= STAGE_PROGRESS_SAVE {
 				if err = saveStageProgress(tx, logPrefix, highestHashableL2BlockNo, highestSeenBatchNo, lastBlockHeight, lastForkId); err != nil {
 					return err
 				}
 				if err := hermezDb.WriteBlockL1InfoTreeIndexProgress(lastBlockHeight, highestL1InfoTreeIndex); err != nil {
 					return err
 				}
-
-				// write the progress to the stream_client
-				cfg.dsClient.UpdateProgress(lastBlockHeight)
-
-				// TODO: consider if this is right! stage progress should == ds progress- and the ds shoudl always loop and start
 
 				if err := tx.Commit(); err != nil {
 					return fmt.Errorf("failed to commit tx, %w", err)
@@ -390,13 +413,17 @@ LOOP:
 				}
 				hermezDb = hermez_db.NewHermezDb(tx)
 				eriDb = erigon_db.NewErigonDb(tx)
-				prevAmountBlocksWritten = blocksWritten
-			}
+				blocksWritten = 0
 
-			if endLoop {
-				log.Info(fmt.Sprintf("[%s] Total blocks read: %d", logPrefix, blocksWritten))
-				break
+				// remove saved entries, and set the acumulated slice manager offset to 0
+				dsSliceManager.RemoveUntilOffset(offset)
+				offset = 0
 			}
+		}
+
+		if endLoop {
+			log.Info(fmt.Sprintf("[%s] Total blocks read: %d", logPrefix, blocksWritten))
+			break
 		}
 	}
 

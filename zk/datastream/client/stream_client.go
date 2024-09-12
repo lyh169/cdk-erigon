@@ -143,8 +143,6 @@ func (c *StreamClient) GetProgressAtomic() *atomic.Uint64 {
 func (c *StreamClient) StartStreaming() {
 	c.streaming.Store(true)
 
-	// this function is the 'coordinator' - it should dial, start, and handle error/reconnect for the stream to ensure it never drops!
-
 	retriesBeforeWarning := 10
 	failCount := 0
 
@@ -157,6 +155,7 @@ func (c *StreamClient) StartStreaming() {
 			if c.conn == nil {
 				if err := c.start(); err != nil {
 					c.setStatusStable(false)
+					c.conn = nil
 					log.Debug(fmt.Sprintf("Failed to reconnect the datastream client: %s", err))
 					failCount++
 					if failCount >= retriesBeforeWarning {
@@ -171,7 +170,15 @@ func (c *StreamClient) StartStreaming() {
 			}
 
 			if err := c.ReadAllEntriesToChannel(); err != nil {
-				log.Warn(fmt.Sprintf("Failed to read all entries to channel: %s", err))
+				log.Warn(fmt.Sprintf("Failed to read all entries to slice manager: %s", err))
+
+				// Close the connection on failure
+				if c.conn != nil {
+					log.Debug("Closing the current connection due to error")
+					c.conn.Close()
+					c.conn = nil
+				}
+
 				c.setStatusStable(false)
 				time.Sleep(2 * time.Second)
 				continue

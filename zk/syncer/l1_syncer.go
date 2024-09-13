@@ -16,7 +16,6 @@ import (
 
 	ethTypes "github.com/ledgerwatch/erigon/core/types"
 	types "github.com/ledgerwatch/erigon/zk/rpcdaemon"
-	"github.com/ledgerwatch/erigon/rpc"
 )
 
 var (
@@ -30,6 +29,7 @@ const rollupSequencedBatchesSignature = "0x25280169" // hardcoded abi signature
 
 type IEtherman interface {
 	HeaderByNumber(ctx context.Context, blockNumber *big.Int) (*ethTypes.Header, error)
+	BlockNumber(ctx context.Context) (uint64, error)
 	BlockByNumber(ctx context.Context, blockNumber *big.Int) (*ethTypes.Block, error)
 	FilterLogs(ctx context.Context, query ethereum.FilterQuery) ([]ethTypes.Log, error)
 	CallContract(ctx context.Context, msg ethereum.CallMsg, blockNumber *big.Int) ([]byte, error)
@@ -280,7 +280,11 @@ func tryToLogL1QueryBlocks(logPrefix string, current, total, threadNum int, dura
 
 func (s *L1Syncer) getLatestL1Block() (uint64, error) {
 	em := s.getNextEtherman()
-	latestBlock, err := em.BlockByNumber(context.Background(), big.NewInt(rpc.FinalizedBlockNumber.Int64()))
+	blkNum, err := em.BlockNumber(context.Background())
+	if err != nil {
+		return 0, err
+	}
+	latestBlock, err := em.BlockByNumber(context.Background(), big.NewInt(int64(blkNum)))
 	if err != nil {
 		return 0, err
 	}

@@ -22,9 +22,9 @@ import (
 	"errors"
 	"math/big"
 
-	"github.com/holiman/uint256"
 	libcommon "github.com/gateway-fm/cdk-erigon-lib/common"
 	types2 "github.com/gateway-fm/cdk-erigon-lib/types"
+	"github.com/holiman/uint256"
 
 	"github.com/ledgerwatch/erigon/core/types"
 )
@@ -56,6 +56,7 @@ type Subscription interface {
 // The returned error is NotFound if the requested item does not exist.
 type ChainReader interface {
 	BlockByHash(ctx context.Context, hash libcommon.Hash) (*types.Block, error)
+	BlockNumber(ctx context.Context) (uint64, error)
 	BlockByNumber(ctx context.Context, number *big.Int) (*types.Block, error)
 	HeaderByHash(ctx context.Context, hash libcommon.Hash) (*types.Header, error)
 	HeaderByNumber(ctx context.Context, number *big.Int) (*types.Header, error)

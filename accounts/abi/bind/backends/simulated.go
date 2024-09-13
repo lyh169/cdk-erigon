@@ -25,12 +25,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/holiman/uint256"
 	libcommon "github.com/gateway-fm/cdk-erigon-lib/common"
 	"github.com/gateway-fm/cdk-erigon-lib/common/hexutility"
 	"github.com/gateway-fm/cdk-erigon-lib/kv"
 	state2 "github.com/gateway-fm/cdk-erigon-lib/state"
 	types2 "github.com/gateway-fm/cdk-erigon-lib/types"
+	"github.com/holiman/uint256"
 	"github.com/ledgerwatch/erigon/chain"
 	"github.com/ledgerwatch/erigon/eth/ethconfig"
 	"github.com/ledgerwatch/log/v3"
@@ -337,6 +337,11 @@ func (b *SimulatedBackend) BlockByNumber(ctx context.Context, number *big.Int) (
 	defer b.mu.Unlock()
 
 	return b.blockByNumberNoLock(ctx, number)
+}
+
+func (b *SimulatedBackend) BlockNumber(ctx context.Context) (uint64, error) {
+	panic("not realize")
+	return uint64(0), nil
 }
 
 // blockByNumberNoLock retrieves a block from the database by number, caching it

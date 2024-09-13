@@ -28,7 +28,6 @@ import (
 
 	"github.com/gateway-fm/cdk-erigon-lib/kv/kvcfg"
 
-	"github.com/gballet/go-verkle"
 	common2 "github.com/gateway-fm/cdk-erigon-lib/common"
 	libcommon "github.com/gateway-fm/cdk-erigon-lib/common"
 	"github.com/gateway-fm/cdk-erigon-lib/common/cmp"
@@ -36,6 +35,7 @@ import (
 	"github.com/gateway-fm/cdk-erigon-lib/common/hexutility"
 	"github.com/gateway-fm/cdk-erigon-lib/common/length"
 	"github.com/gateway-fm/cdk-erigon-lib/kv"
+	"github.com/gballet/go-verkle"
 	"github.com/ledgerwatch/log/v3"
 
 	"github.com/ledgerwatch/erigon/common"
@@ -469,6 +469,8 @@ func NonCanonicalTransactions(db kv.Getter, baseTxId uint64, amount uint32) ([]t
 func WriteTransactions(db kv.RwTx, txs []types.Transaction, baseTxId uint64, blockHash *libcommon.Hash) error {
 	txId := baseTxId
 	buf := bytes.NewBuffer(nil)
+	log.Info(fmt.Sprintf("lyh*********WriteTransactions start baseTxId[%d] tx %d", baseTxId, len(txs)))
+	sign := 0
 	for _, tx := range txs {
 		txIdKey := make([]byte, 8)
 		binary.BigEndian.PutUint64(txIdKey, txId)
@@ -481,16 +483,19 @@ func WriteTransactions(db kv.RwTx, txs []types.Transaction, baseTxId uint64, blo
 
 		// If next Append returns KeyExists error - it means you need to open transaction in App code before calling this func. Batch is also fine.
 		if blockHash != nil {
+			sign = 1
 			key := append(txIdKey, blockHash.Bytes()...)
 			if err := db.Append(kv.EthTxV3, key, common.CopyBytes(buf.Bytes())); err != nil {
 				return err
 			}
 		} else {
+			sign = 2
 			if err := db.Append(kv.EthTx, txIdKey, common.CopyBytes(buf.Bytes())); err != nil {
 				return err
 			}
 		}
 	}
+	log.Info(fmt.Sprintf("lyh*********WriteTransactions end baseTxId[%d] tx %d sign %d", baseTxId, len(txs), sign))
 	return nil
 }
 

@@ -9,6 +9,7 @@ import (
 
 	"github.com/ledgerwatch/erigon/core/rawdb"
 	ethTypes "github.com/ledgerwatch/erigon/core/types"
+	"github.com/ledgerwatch/log/v3"
 )
 
 var sha3UncleHash = common.HexToHash("0x1dcc4de8dec75d7aab85b567b6ccd41ad312451b948a7413f0a142fd40d49347")
@@ -58,6 +59,7 @@ func (db ErigonDb) WriteBody(blockNo *big.Int, headerHash common.Hash, txs []eth
 	b := &ethTypes.Body{
 		Transactions: txs,
 	}
+	log.Info(fmt.Sprintf("lyh*********blockNo[%d] tx %d", blockNo.Int64(), len(txs)))
 
 	// writes txs to EthTx (canonical table)
 	return rawdb.WriteBody(db.tx, headerHash, blockNo.Uint64(), b)

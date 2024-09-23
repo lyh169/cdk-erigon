@@ -95,10 +95,11 @@ func TestBatchDiffentBlockHash(t *testing.T) {
 
 	srcClient, err := rpc.Dial("https://rpc.merlinchain.io")
 	require.NoError(t, err)
-	dstClient, err := rpc.Dial("http://35.247.156.252:8123")
+	//dstClient, err := rpc.Dial("http://35.247.156.252:8123")
+	dstClient, err := rpc.Dial("http://127.0.0.1:8123")
 	require.NoError(t, err)
 
-	from := int64(11296900) // mainnet
+	from := int64(11333400) // mainnet
 	to := int64(12222828)
 
 	var m ethconfig.Merlin

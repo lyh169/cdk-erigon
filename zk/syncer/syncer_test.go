@@ -139,6 +139,7 @@ func TestBatchDiffentBlockHash(t *testing.T) {
 		for j := 0; j < len(sBlk); j++ {
 			if sBlk[j].ReceiptHash != dBlk[j].ReceiptHash {
 				m.Headers = append(m.Headers, sBlk[j])
+				fmt.Println("different block number is", sBlk[j].Number.Uint64())
 			}
 		}
 		if end%100 == 0 {

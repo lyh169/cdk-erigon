@@ -18,8 +18,8 @@ import (
 	"github.com/ledgerwatch/erigon/params"
 	erigonapp "github.com/ledgerwatch/erigon/turbo/app"
 	erigoncli "github.com/ledgerwatch/erigon/turbo/cli"
-	"github.com/ledgerwatch/erigon/turbo/node"
 	"github.com/ledgerwatch/erigon/turbo/logging"
+	"github.com/ledgerwatch/erigon/turbo/node"
 )
 
 func main() {
@@ -61,6 +61,7 @@ func runErigon(cliCtx *cli.Context) error {
 
 	nodeCfg := node.NewNodConfigUrfave(cliCtx)
 	ethCfg := node.NewEthConfigUrfave(cliCtx, nodeCfg)
+	ethCfg.Zk.Merlin = ethCfg.Merlin
 
 	ethNode, err := node.New(nodeCfg, ethCfg)
 	if err != nil {

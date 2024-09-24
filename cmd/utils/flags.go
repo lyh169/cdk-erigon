@@ -1862,8 +1862,7 @@ func SetEthConfig(ctx *cli.Context, nodeConfig *nodecfg.Config, cfg *ethconfig.C
 		}
 		SetDNSDiscoveryDefaults(cfg, genesisHash)
 
-		// add merlin chain config
-		// Be sure to set this first
+		// add merlin chain config if it have
 		params.DynamicChainConfigPath = filepath.Dir(configFilePath)
 		filename = path.Join(params.DynamicChainConfigPath, chain+"-block.json")
 		m, err := ethconfig.ReadMerlinCfg(filename)

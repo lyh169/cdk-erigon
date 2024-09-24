@@ -57,7 +57,9 @@ func TestDiffentBlockHash(t *testing.T) {
 		}()
 		wg.Wait()
 		if sBlk.ReceiptHash != dBlk.ReceiptHash {
-			m.Headers = append(m.Headers, sBlk)
+			//m.Headers = append(m.Headers, sBlk)
+			m.Headers[sBlk.Number.Uint64()] = sBlk
+			fmt.Println("different block number is", sBlk.Number.Uint64())
 		}
 		if i%100 == 0 {
 			fmt.Println("current query blocknum is", i, "headercount", len(m.Headers))
@@ -93,16 +95,19 @@ func TestBatchDiffentBlockHash(t *testing.T) {
 	//dstClient, err := ethclient.Dial("http://35.247.156.252:8123")
 	//require.NoError(t, err)
 
-	srcClient, err := rpc.Dial("https://rpc.merlinchain.io")
+	srcClient, err := rpc.Dial("http://43.134.127.80:8123")
 	require.NoError(t, err)
 	//dstClient, err := rpc.Dial("http://35.247.156.252:8123")
 	dstClient, err := rpc.Dial("http://127.0.0.1:8123")
 	require.NoError(t, err)
 
-	from := int64(11333400) // mainnet
-	to := int64(12222828)
+	//from := int64(11333400) // mainnet
+	//to := int64(12222828)
 
-	var m ethconfig.Merlin
+	from := int64(7428700) // testnet
+	to := int64(11196765)
+
+	m := ethconfig.Merlin{Headers: make(map[uint64]*types.Header)}
 	var sBlk []*types.Header
 	var dBlk []*types.Header
 	wg := sync.WaitGroup{}
@@ -139,7 +144,8 @@ func TestBatchDiffentBlockHash(t *testing.T) {
 
 		for j := 0; j < len(sBlk); j++ {
 			if sBlk[j].ReceiptHash != dBlk[j].ReceiptHash {
-				m.Headers = append(m.Headers, sBlk[j])
+				//m.Headers = append(m.Headers, sBlk[j])
+				m.Headers[sBlk[j].Number.Uint64()] = sBlk[j]
 				fmt.Println("different block number is", sBlk[j].Number.Uint64())
 			}
 		}

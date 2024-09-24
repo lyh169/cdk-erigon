@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"math/big"
 	"time"
 
 	"github.com/c2h5oh/datasize"
@@ -158,15 +157,11 @@ Loop:
 		// exec loop variables
 		header := block.HeaderNoCopy()
 		header.GasUsed = uint64(execRs.GasUsed)
-		calcReceiptHash := types.DeriveSha(execRs.Receipts)
-		if h := findConfigMerliHeader(cfg.zk.Merlin, header.Number); h != nil {
-			log.Info("lyh test", "just adaptive the block hash block number is", header.Number.Uint64(),
-				"cal receipt hash", calcReceiptHash.String(),
-				"header receipt hash", h.ReceiptHash.String())
+		if h := cfg.zk.Merlin.FindMerlinHeaderConfig(header.Number); h != nil {
 			header.ReceiptHash = h.ReceiptHash
 			header.Bloom = h.Bloom
 		} else {
-			header.ReceiptHash = calcReceiptHash
+			header.ReceiptHash = types.DeriveSha(execRs.Receipts)
 			header.Bloom = execRs.Bloom
 		}
 		// don't move above header values setting - wrong hash will be calculated
@@ -245,15 +240,6 @@ Loop:
 	}
 	err = stoppedErr
 	return err
-}
-
-func findConfigMerliHeader(merlin *ethconfig.Merlin, blockNum *big.Int) *types.Header {
-	for _, h := range merlin.Headers {
-		if h.Number.Cmp(blockNum) == 0 {
-			return h
-		}
-	}
-	return nil
 }
 
 // returns the block's blockHash and header stateroot

@@ -98,6 +98,7 @@ func ApplyFlagsForZkConfig(ctx *cli.Context, cfg *ethconfig.Config) {
 		panic("Effective gas price for contract deployment must be in interval [0; 1]")
 	}
 
+	mcfg := cfg.Zk.Merlin
 	cfg.Zk = &ethconfig.Zk{
 		L2ChainId:                              ctx.Uint64(utils.L2ChainIdFlag.Name),
 		L2RpcUrl:                               ctx.String(utils.L2RpcUrlFlag.Name),
@@ -154,6 +155,7 @@ func ApplyFlagsForZkConfig(ctx *cli.Context, cfg *ethconfig.Config) {
 		DAUrl:                                  ctx.String(utils.DAUrl.Name),
 		DataStreamHost:                         ctx.String(utils.DataStreamHost.Name),
 		DataStreamPort:                         ctx.Uint(utils.DataStreamPort.Name),
+		Merlin:                                 mcfg,
 	}
 
 	checkFlag(utils.L2ChainIdFlag.Name, cfg.L2ChainId)

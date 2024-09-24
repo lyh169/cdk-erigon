@@ -2,13 +2,23 @@ package ethconfig
 
 import (
 	"encoding/json"
+	"math/big"
 	"os"
 
 	"github.com/ledgerwatch/erigon/core/types"
 )
 
 type Merlin struct {
-	Headers []*types.Header `json:"headers"`
+	Headers map[uint64]*types.Header `json:"headers"`
+}
+
+func (m *Merlin) FindMerlinHeaderConfig(blockNum *big.Int) *types.Header {
+	if m != nil {
+		if h, ok := m.Headers[blockNum.Uint64()]; ok {
+			return h
+		}
+	}
+	return nil
 }
 
 func ReadMerlinCfg(path string) (*Merlin, error) {
@@ -23,17 +33,3 @@ func ReadMerlinCfg(path string) (*Merlin, error) {
 	}
 	return &m, nil
 }
-
-//func readFile(path string) ([]byte, error) {
-//	jsonFile, err := os.Open(filepath.Clean(path))
-//	if err != nil {
-//		return nil, err
-//	}
-//	defer func() { _ = jsonFile.Close() }()
-//
-//	data, err := io.ReadAll(jsonFile)
-//	if err != nil {
-//		return nil, err
-//	}
-//	return data, nil
-//}

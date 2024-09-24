@@ -65,6 +65,7 @@ type Zk struct {
 	PoolManagerUrl         string
 	DisableVirtualCounters bool
 	ExecutorPayloadOutput  string
+	// support for the block hash calculate
 	*Merlin
 }
 

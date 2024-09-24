@@ -255,7 +255,6 @@ type Config struct {
 
 	//[zkevm]
 	*Zk
-	*Merlin
 }
 
 type Sync struct {

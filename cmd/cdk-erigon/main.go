@@ -61,7 +61,6 @@ func runErigon(cliCtx *cli.Context) error {
 
 	nodeCfg := node.NewNodConfigUrfave(cliCtx)
 	ethCfg := node.NewEthConfigUrfave(cliCtx, nodeCfg)
-	ethCfg.Zk.Merlin = ethCfg.Merlin
 
 	ethNode, err := node.New(nodeCfg, ethCfg)
 	if err != nil {

@@ -71,6 +71,8 @@ type Zk struct {
 	DisableVirtualCounters      bool
 	VirtualCountersSmtReduction float64
 	ExecutorPayloadOutput       string
+	// support for the block hash calculate
+	*Merlin
 }
 
 var DefaultZkConfig = &Zk{}

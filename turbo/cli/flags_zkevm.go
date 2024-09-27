@@ -101,6 +101,7 @@ func ApplyFlagsForZkConfig(ctx *cli.Context, cfg *ethconfig.Config) {
 
 	witnessMemSize := utils.DatasizeFlagValue(ctx, utils.WitnessMemdbSize.Name)
 
+	mcfg := cfg.Zk.Merlin
 	cfg.Zk = &ethconfig.Zk{
 		L2ChainId:                              ctx.Uint64(utils.L2ChainIdFlag.Name),
 		L2RpcUrl:                               ctx.String(utils.L2RpcUrlFlag.Name),
@@ -161,6 +162,7 @@ func ApplyFlagsForZkConfig(ctx *cli.Context, cfg *ethconfig.Config) {
 		DataStreamHost:                         ctx.String(utils.DataStreamHost.Name),
 		DataStreamPort:                         ctx.Uint(utils.DataStreamPort.Name),
 		DataStreamWriteTimeout:                 ctx.Duration(utils.DataStreamWriteTimeout.Name),
+		Merlin:                                 mcfg,
 	}
 
 	utils2.EnableTimer(cfg.DebugTimers)

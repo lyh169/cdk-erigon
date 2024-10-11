@@ -1,0 +1,1 @@
+[{"inputs":[{"internalType":"address","name":"bridgeC","type":"address"},{"internalType":"address","name":"bridgeD","type":"address"},{"internalType":"address","name":"acc","type":"address"}],"name":"exec","outputs":[],"stateMutability":"payable","type":"function"},{"stateMutability":"payable","type":"receive"}]

@@ -1,0 +1,1 @@
+[{"inputs":[],"name":"exec","outputs":[],"stateMutability":"payable","type":"function"},{"inputs":[],"name":"execRevert","outputs":[],"stateMutability":"payable","type":"function"},{"inputs":[],"name":"get","outputs":[{"internalType":"string","name":"t","type":"string"}],"stateMutability":"pure","type":"function"},{"stateMutability":"payable","type":"receive"}]

@@ -142,6 +142,10 @@ func (srv *DataStreamServer) WriteBlocksToStreamConsecutively(
 
 	entries := make([]DataStreamEntryProto, 0, insertEntryCount)
 	var forkId uint64
+
+	log.Info("lyh********: start loop",
+		"block", from,
+		"target", to)
 LOOP:
 	for currentBlockNumber := from; currentBlockNumber <= to; currentBlockNumber++ {
 		select {
@@ -195,13 +199,22 @@ LOOP:
 		}
 	}
 
+	log.Info("lyh********: end loop",
+		"block", from,
+		"target", to)
+
 	if err = srv.CommitEntriesToStreamProto(entries, &to, &latestbatchNum); err != nil {
 		return err
 	}
 
+	log.Info("lyh********: end CommitEntriesToStreamProto",
+		"latestbatchNum", latestbatchNum)
+
 	if err = srv.stream.CommitAtomicOp(); err != nil {
 		return err
 	}
+	log.Info("lyh********: end CommitAtomicOp",
+		"latestbatchNum", latestbatchNum)
 
 	return nil
 }

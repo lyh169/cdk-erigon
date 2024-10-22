@@ -144,12 +144,18 @@ func CatchupDatastream(ctx context.Context, logPrefix string, tx kv.RwTx, stream
 	}
 
 	if err = srv.WriteBlocksToStreamConsecutively(ctx, logPrefix, tx, reader, previousProgress+1, finalBlockNumber); err != nil {
+		log.Info("lyh********: WriteBlocksToStreamConsecutively",
+			"err", err)
 		return 0, err
 	}
+
+	log.Info("lyh********: WriteBlocksToStreamConsecutively sussful")
 
 	if err = stages.SaveStageProgress(tx, stages.DataStream, finalBlockNumber); err != nil {
 		return 0, err
 	}
+
+	log.Info("lyh********: SaveStageProgress sussful")
 
 	return finalBlockNumber, nil
 }

@@ -1109,8 +1109,10 @@ func (s *Ethereum) PreStart() error {
 		// so here we loop and take a brief pause waiting for it to be ready
 		attempts := 0
 		for {
+			log.Info("lyh********: tx.CatchupDatastream start")
 			_, err = zkStages.CatchupDatastream(s.sentryCtx, "stream-catchup", tx, s.dataStream, s.chainConfig.ChainID.Uint64(), s.config.DatastreamVersion, s.config.HasExecutors())
 			if err != nil {
+				log.Info("lyh********: tx.end start", "error", err.Error())
 				if errors.Is(err, datastreamer.ErrAtomicOpNotAllowed) {
 					attempts++
 					if attempts == 10 {
@@ -1121,12 +1123,16 @@ func (s *Ethereum) PreStart() error {
 				}
 				return err
 			} else {
+				log.Info("lyh********: tx.end start success")
 				break
 			}
 		}
+		log.Info("lyh********: PreStart tx. start")
 		if err = tx.Commit(); err != nil {
+			log.Info("lyh********: PreStart tx. start", "error", err.Error())
 			return err
 		}
+		log.Info("lyh********: PreStart tx. end")
 	}
 
 	return nil

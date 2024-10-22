@@ -67,9 +67,11 @@ func SpawnStageDataStreamCatchup(
 	}
 
 	if createdTx {
+		log.Info("lyh********: tx.Commit start")
 		if err := tx.Commit(); err != nil {
 			log.Error(fmt.Sprintf("[%s] error: %s", logPrefix, err))
 		}
+		log.Info("lyh********: tx.Commit end")
 	}
 
 	log.Info(fmt.Sprintf("[%s] stage complete", logPrefix), "block", finalBlockNumber)

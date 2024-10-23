@@ -377,3 +377,6 @@ protobuf:
 ## help:                              print commands help
 help	:	Makefile
 	@sed -n 's/^##//p' $<
+
+build-docker:
+	docker build -t cdk-erigon -f ./Dockerfile.local .

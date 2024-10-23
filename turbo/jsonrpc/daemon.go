@@ -69,6 +69,7 @@ func APIList(db kv.RoDB, eth rpchelper.ApiBackend, txPool txpool.TxpoolClient, r
 	gqlImpl := NewGraphQLAPI(base, db)
 	overlayImpl := NewOverlayAPI(base, db, cfg.Gascap, cfg.OverlayGetLogsTimeout, cfg.OverlayReplayBlockTimeout, otsImpl)
 	zkEvmImpl := NewZkEvmAPI(ethImpl, db, cfg.ReturnDataLimit, ethCfg, l1Syncer, rpcUrl, dataStreamServer)
+	merlinAPIImpl := NewMerlinAPI(ethImpl, zkEvmImpl, ethCfg.Merlin, db, l1Syncer)
 
 	if cfg.GraphQLEnabled {
 		list = append(list, rpc.API{
@@ -172,6 +173,13 @@ func APIList(db kv.RoDB, eth rpchelper.ApiBackend, txPool txpool.TxpoolClient, r
 				Namespace: "zkevm",
 				Public:    true,
 				Service:   ZkEvmAPI(zkEvmImpl),
+				Version:   "1.0",
+			})
+		case "merlin":
+			list = append(list, rpc.API{
+				Namespace: "merlin",
+				Public:    true,
+				Service:   MerlinAPI(merlinAPIImpl),
 				Version:   "1.0",
 			})
 		case "clique":

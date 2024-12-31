@@ -758,6 +758,22 @@ var (
 		Usage: "Seal the batch immediately when detecting a counter overflow",
 		Value: false,
 	}
+
+	VerifyZkProofForkid = cli.Uint64SliceFlag{
+		Name:  "zkevm.verify.zkProof.forkid",
+		Usage: "verify zkproof forkid",
+	}
+
+	VerifyZkProofVerifier = cli.StringSliceFlag{
+		Name:  "zkevm.verify.zkProof.verifier",
+		Usage: "verify zkproof verifier",
+	}
+
+	VerifyZkProofTrustedAggregator = cli.StringSliceFlag{
+		Name:  "zkevm.verify.zkProof.trustedAggregator",
+		Usage: "verify zkproof trustedAggregator",
+	}
+
 	MockWitnessGeneration = cli.BoolFlag{
 		Name:  "zkevm.mock-witness-generation",
 		Usage: "Mock the witness generation",
@@ -2295,9 +2311,9 @@ func SetEthConfig(ctx *cli.Context, nodeConfig *nodecfg.Config, cfg *ethconfig.C
 		// add merlin chain config if it have
 		params.DynamicChainConfigPath = filepath.Dir(configFilePath)
 		filename = path.Join(params.DynamicChainConfigPath, chain+"-block.json")
-		m, err := ethconfig.ReadMerlinCfg(filename)
+		rblk, err := ethconfig.ReadReplaceBlock(filename)
 		if err == nil {
-			cfg.Merlin = m
+			cfg.Merlin = &ethconfig.Merlin{ReplaceBlocks: rblk}
 		}
 	} else {
 		switch chain {

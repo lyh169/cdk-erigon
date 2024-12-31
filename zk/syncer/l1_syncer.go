@@ -559,6 +559,14 @@ func (s *L1Syncer) callGetAddress(ctx context.Context, addr *common.Address, dat
 	return common.BytesToAddress(resp[len(resp)-20:]), nil
 }
 
+func (s *L1Syncer) CallContract(ctx context.Context, addr *common.Address, data []byte) ([]byte, error) {
+	em := s.getNextEtherman()
+	return em.CallContract(ctx, ethereum.CallMsg{
+		To:   addr,
+		Data: data,
+	}, nil)
+}
+
 func (s *L1Syncer) CheckL1BlockFinalized(blockNo uint64) (finalized bool, finalizedBn uint64, err error) {
 	em := s.getNextEtherman()
 	block, err := em.BlockByNumber(s.ctx, big.NewInt(rpc.FinalizedBlockNumber.Int64()))

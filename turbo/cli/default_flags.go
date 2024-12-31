@@ -289,6 +289,9 @@ var DefaultFlags = []cli.Flag{
 	&utils.ACLPrintHistory,
 	&utils.InfoTreeUpdateInterval,
 	&utils.SealBatchImmediatelyOnOverflow,
+	&utils.VerifyZkProofForkid,
+	&utils.VerifyZkProofVerifier,
+	&utils.VerifyZkProofTrustedAggregator,
 	&utils.MockWitnessGeneration,
 	&utils.WitnessContractInclusion,
 }

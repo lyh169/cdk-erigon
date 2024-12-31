@@ -117,6 +117,11 @@ func ApplyFlagsForZkConfig(ctx *cli.Context, cfg *ethconfig.Config) {
 	witnessMemSize := utils.DatasizeFlagValue(ctx, utils.WitnessMemdbSize.Name)
 
 	mcfg := cfg.Zk.Merlin
+	if mcfg == nil {
+		mcfg = &ethconfig.Merlin{}
+	}
+	mcfg.VerifyZkProofConfigs = parseVerifyZkProofConfigs(ctx)
+
 	badBatchStrings := strings.Split(ctx.String(utils.BadBatches.Name), ",")
 	badBatches := make([]uint64, 0)
 	for _, s := range badBatchStrings {
@@ -269,4 +274,24 @@ func ApplyFlagsForZkConfig(ctx *cli.Context, cfg *ethconfig.Config) {
 	checkFlag(utils.TxPoolRejectSmartContractDeployments.Name, cfg.TxPoolRejectSmartContractDeployments)
 	checkFlag(utils.L1ContractAddressCheckFlag.Name, cfg.L1ContractAddressCheck)
 	checkFlag(utils.L1ContractAddressRetrieveFlag.Name, cfg.L1ContractAddressCheck)
+}
+
+func parseVerifyZkProofConfigs(ctx *cli.Context) []*ethconfig.VerifyZkProofConfig {
+	var confs []*ethconfig.VerifyZkProofConfig
+	forkids := ctx.Uint64Slice(utils.VerifyZkProofForkid.Name)
+	verifiers := ctx.StringSlice(utils.VerifyZkProofVerifier.Name)
+	aggregators := ctx.StringSlice(utils.VerifyZkProofTrustedAggregator.Name)
+
+	if len(forkids) != len(verifiers) || len(forkids) != len(aggregators) || len(verifiers) != len(aggregators) {
+		panic(fmt.Sprintf("VerifyZkProofConfigs length of forkids or verifiers or aggregators is not equal"))
+	}
+
+	for i := 0; i < len(forkids); i++ {
+		confs = append(confs, &ethconfig.VerifyZkProofConfig{
+			ForkID:            forkids[i],
+			Verifier:          libcommon.HexToAddress(verifiers[i]),
+			TrustedAggregator: libcommon.HexToAddress(aggregators[i]),
+		})
+	}
+	return confs
 }

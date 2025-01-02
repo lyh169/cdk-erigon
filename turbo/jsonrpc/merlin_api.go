@@ -15,9 +15,11 @@ import (
 	"github.com/ledgerwatch/erigon/accounts/abi"
 	"github.com/ledgerwatch/erigon/common"
 	"github.com/ledgerwatch/erigon/eth/ethconfig"
+	"github.com/ledgerwatch/erigon/eth/stagedsync/stages"
 	"github.com/ledgerwatch/erigon/rpc"
 	"github.com/ledgerwatch/erigon/zk/hermez_db"
 	"github.com/ledgerwatch/erigon/zk/syncer"
+	"github.com/ledgerwatch/erigon/zk/types"
 	"github.com/ledgerwatch/erigon/zk/utils"
 )
 
@@ -94,26 +96,8 @@ func (m *MerlinAPIImpl) GetZkProof(ctx context.Context, number rpc.BlockNumber, 
 	if _, err := checkMerlinZkProofConfig(m.cfg); err != nil {
 		return nil, err
 	}
-
 	if number == 0 {
 		return nil, fmt.Errorf("the block number = 0 or earliest, not have verify proof, should block number > 0")
-	}
-
-	var batchNum uint64
-	var err error
-	if number > 0 {
-		bnum, err := m.zkApi.BatchNumberByBlockNumber(ctx, number)
-		if err != nil {
-			return nil, fmt.Errorf("failed to get batch number from block number %v, %v", number, err.Error())
-		}
-		batchNum = uint64(bnum)
-	} else {
-		//get latest verify batch
-		lastBatch, err := m.zkApi.VerifiedBatchNumber(ctx)
-		if err != nil {
-			return nil, fmt.Errorf("failed to get the last verified batch from state %v", err.Error())
-		}
-		batchNum = uint64(lastBatch)
 	}
 
 	tx, err := m.db.BeginRo(ctx)
@@ -121,20 +105,36 @@ func (m *MerlinAPIImpl) GetZkProof(ctx context.Context, number rpc.BlockNumber, 
 		return false, err
 	}
 	defer tx.Rollback()
-	hermezDb := hermez_db.NewHermezDbReader(tx)
 
-	// verification - if we can't find one, maybe this batch was verified along with a higher batch number
-	verifiedBatch, err := hermezDb.GetVerificationByBatchNoOrHighest(batchNum)
-	if err != nil || verifiedBatch == nil {
-		return nil, fmt.Errorf("failed to load verified batch by batch number %v, %v", batchNum, err.Error())
+	hermezDb := hermez_db.NewHermezDbReader(tx)
+	verifiedBatch, err := m.getLatestVerifiedBatchNumber(tx, hermezDb)
+	if err != nil {
+		return nil, err
 	}
 
-	// batch l2 data - must build on the fly
+	batchNum := verifiedBatch.BatchNo
+	verifiedBatchL1TxHash := verifiedBatch.L1TxHash
+	if number > 0 {
+		bnum, err := m.zkApi.BatchNumberByBlockNumber(ctx, number)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get batch number from block number %v, %v", number, err.Error())
+		}
+		curVerifiedBatch, err := hermezDb.GetVerificationByBatchNoOrHighest(uint64(bnum))
+		if err != nil || curVerifiedBatch == nil {
+			return nil, fmt.Errorf("failed to load verified batch by batch number %v, %v", bnum, err.Error())
+		}
+		if verifiedBatch.BatchNo < curVerifiedBatch.BatchNo {
+			return nil, fmt.Errorf("failed the query block number is not a verified batch %v, current need verified batch is %v", verifiedBatch.BatchNo, curVerifiedBatch.BatchNo)
+		}
+		batchNum = curVerifiedBatch.BatchNo
+		verifiedBatchL1TxHash = curVerifiedBatch.L1TxHash
+	}
+
 	forkID, err := hermezDb.GetForkId(batchNum)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get forkID by batch number %v, %v", batchNum, err.Error())
 	}
-	zkm, snark, err := m.getZkProofMeta(ctx, verifiedBatch.L1TxHash, forkID)
+	zkm, snark, err := m.getZkProofMeta(ctx, verifiedBatchL1TxHash, forkID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get zk prrof by batch number %v, %v", batchNum, err.Error())
 	}
@@ -149,6 +149,7 @@ func (m *MerlinAPIImpl) GetZkProof(ctx context.Context, number rpc.BlockNumber, 
 			Rfield: RFIELD,
 		}
 	}
+
 	return ZKProof{
 		ForkID:        zkm.forkID,
 		Proof:         zkm.proof,
@@ -157,6 +158,28 @@ func (m *MerlinAPIImpl) GetZkProof(ctx context.Context, number rpc.BlockNumber, 
 		StartBlockNum: blks.(blockRange).start,
 		EndBlockNum:   blks.(blockRange).end,
 	}, nil
+}
+
+func (m *MerlinAPIImpl) getLatestVerifiedBatchNumber(tx kv.Tx, hermezDb *hermez_db.HermezDbReader) (*types.L1BatchInfo, error) {
+	latestFinishedBlock, err := stages.GetStageProgress(tx, stages.Finish)
+	if err != nil {
+		return nil, fmt.Errorf("getting latest finished state block number: %w", err)
+	}
+	batchNum, err := hermezDb.GetBatchNoByL2Block(latestFinishedBlock)
+	if err != nil {
+		return nil, fmt.Errorf("getting latest finished state batch number: %w", err)
+	}
+	for i := batchNum; i > 0; i-- {
+		// verification - if we can't find one, maybe this batch was verified along with a higher batch number
+		verifiedBatch, err := hermezDb.GetVerificationByBatchNoOrHighest(i)
+		if err != nil || verifiedBatch == nil {
+			return nil, fmt.Errorf("failed to load verified batch by batch number %v, %v", batchNum, err.Error())
+		}
+		if verifiedBatch.BatchNo <= batchNum {
+			return verifiedBatch, nil
+		}
+	}
+	return nil, fmt.Errorf("not find the latest verified batch that smaller the batch of %v", batchNum)
 }
 
 type zkProofMeta struct {

@@ -2319,6 +2319,7 @@ func SetEthConfig(ctx *cli.Context, nodeConfig *nodecfg.Config, cfg *ethconfig.C
 		rblk, err := ethconfig.ReadReplaceBlock(filename)
 		if err == nil {
 			cfg.Merlin = &ethconfig.Merlin{ReplaceBlocks: rblk}
+			log.Info("Read replace block successful", "need replace count", len(rblk.Headers), "filename", filename)
 		}
 	} else {
 		switch chain {

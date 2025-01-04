@@ -121,7 +121,7 @@ func (m *MerlinAPIImpl) GetZkProof(ctx context.Context, number rpc.BlockNumber, 
 		}
 		curVerifiedBatch, err := hermezDb.GetVerificationByBatchNoOrHighest(uint64(bnum))
 		if err != nil || curVerifiedBatch == nil {
-			return nil, fmt.Errorf("failed to load verified batch by batch number %v, %v", bnum, err.Error())
+			return nil, fmt.Errorf("failed to load verified batch by batch number %v", bnum)
 		}
 		if verifiedBatch.BatchNo < curVerifiedBatch.BatchNo {
 			return nil, fmt.Errorf("failed the query block number is not a verified batch %v, current need verified batch is %v", verifiedBatch.BatchNo, curVerifiedBatch.BatchNo)
@@ -173,7 +173,7 @@ func (m *MerlinAPIImpl) getLatestVerifiedBatchNumber(tx kv.Tx, hermezDb *hermez_
 		// verification - if we can't find one, maybe this batch was verified along with a higher batch number
 		verifiedBatch, err := hermezDb.GetVerificationByBatchNoOrHighest(i)
 		if err != nil || verifiedBatch == nil {
-			return nil, fmt.Errorf("failed to load verified batch by batch number %v, %v", batchNum, err.Error())
+			return nil, fmt.Errorf("failed to load verified batch by batch number %v", batchNum)
 		}
 		if verifiedBatch.BatchNo <= batchNum {
 			return verifiedBatch, nil

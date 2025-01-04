@@ -173,7 +173,7 @@ func (m *MerlinAPIImpl) getLatestVerifiedBatchNumber(tx kv.Tx, hermezDb *hermez_
 		// verification - if we can't find one, maybe this batch was verified along with a higher batch number
 		verifiedBatch, err := hermezDb.GetVerificationByBatchNoOrHighest(i)
 		if err != nil || verifiedBatch == nil {
-			return nil, fmt.Errorf("failed to load verified batch by batch number %v", batchNum)
+			continue
 		}
 		if verifiedBatch.BatchNo <= batchNum {
 			return verifiedBatch, nil

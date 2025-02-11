@@ -34,13 +34,14 @@ import (
 	zkUtils "github.com/ledgerwatch/erigon/zk/utils"
 	"github.com/ledgerwatch/log/v3"
 
-	"github.com/ledgerwatch/erigon-lib/kv/membatchwithdb"
-	"github.com/holiman/uint256"
 	"math"
+
+	"github.com/holiman/uint256"
+	"github.com/ledgerwatch/erigon-lib/kv/membatchwithdb"
 )
 
 var (
-	maxGetProofRewindBlockCount uint64 = 500_000
+	maxGetProofRewindBlockCount uint64 = 10_000_000
 
 	ErrEndBeforeStart = errors.New("end block must be higher than start block")
 )

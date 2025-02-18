@@ -230,6 +230,12 @@ func (c *StreamClient) ReadAllEntriesToChannel() error {
 
 	// send start command
 	if err := c.initiateDownloadBookmark(protoBookmark); err != nil {
+		if c.conn != nil {
+			if err2 := c.conn.Close(); err2 != nil {
+				log.Error("failed to close connection after error", "original-error", err, "new-error", err2)
+			}
+			c.conn = nil
+		}
 		return err
 	}
 
@@ -336,7 +342,7 @@ LOOP:
 
 func (c *StreamClient) tryReConnect() error {
 	var err error
-	for i := 0; i < 50; i++ {
+	for i := 0; i < 10; i++ {
 		if c.conn != nil {
 			if err := c.conn.Close(); err != nil {
 				return err

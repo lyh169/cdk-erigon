@@ -19,6 +19,10 @@ import (
 	"github.com/ledgerwatch/erigon/zk/utils"
 )
 
+const (
+	MinBlockIntervalTime = time.Second
+)
+
 var shouldCheckForExecutionAndDataStreamAlighment = true
 
 func SpawnSequencingStage(
@@ -235,6 +239,7 @@ func sequencingBatchStep(
 		log.Info(fmt.Sprintf("[%s] Starting block %d (forkid %v)...", logPrefix, blockNumber, batchState.forkId))
 		logTicker.Reset(10 * time.Second)
 		blockTicker.Reset(cfg.zk.SequencerBlockSealTime)
+		blockStartTime := time.Now()
 
 		if batchState.isL1Recovery() {
 			blockNumbersInBatchSoFar, err := batchContext.sdb.hermezDb.GetL2BlockNosByBatch(batchState.batchNumber)
@@ -443,6 +448,7 @@ func sequencingBatchStep(
 								if batchState.reachedOverflowTransactionLimit() || cfg.zk.SealBatchImmediatelyOnOverflow {
 									log.Info(fmt.Sprintf("[%s] closing batch due to counters", logPrefix), "counters: ", batchState.overflowTransactions, "immediate", cfg.zk.SealBatchImmediatelyOnOverflow)
 									runLoopBlocks = false
+									checkMinBlockIntervalTime(blockStartTime)
 									break LOOP_TRANSACTIONS
 								}
 							}
@@ -460,6 +466,7 @@ func sequencingBatchStep(
 						}
 						log.Info(fmt.Sprintf("[%s] gas overflowed adding transaction to block", logPrefix), "block", blockNumber, "tx-hash", txHash)
 						runLoopBlocks = false
+						checkMinBlockIntervalTime(blockStartTime)
 						break LOOP_TRANSACTIONS
 					case overflowNone:
 					}

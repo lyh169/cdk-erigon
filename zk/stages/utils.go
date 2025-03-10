@@ -16,6 +16,7 @@ import (
 
 	"github.com/ledgerwatch/erigon/core/types"
 	db2 "github.com/ledgerwatch/erigon/smt/pkg/db"
+	jsonClient "github.com/ledgerwatch/erigon/zkevm/jsonrpc/client"
 )
 
 func TrimHexString(s string) string {
@@ -151,4 +152,22 @@ func DeriveEffectiveGasPrice(cfg SequenceBlockCfg, tx types.Transaction) uint8 {
 	}
 
 	return cfg.zk.EffectiveGasPriceForEthTransfer
+}
+
+func GetL2BlockStateHashByNumber(endpoint string, blockNo uint64) (common.Hash, error) {
+	asHex := fmt.Sprintf("0x%x", blockNo)
+	res, err := jsonClient.JSONRPCCall(endpoint, "eth_getBlockByNumber", asHex, false)
+	if err != nil {
+		return common.Hash{}, err
+	}
+
+	type L2Block struct {
+		StateRoot common.Hash `json:"stateRoot"`
+	}
+
+	var l2Block L2Block
+	if err := json.Unmarshal(res.Result, &l2Block); err != nil {
+		return common.Hash{}, err
+	}
+	return l2Block.StateRoot, nil
 }

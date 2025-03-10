@@ -186,7 +186,7 @@ Loop:
 		}
 
 		// State Root Verifications Check
-		err = verifyAgainstLocalBlocks(tx, hermezDb, logPrefix)
+		err = verifyAgainstLocalBlocks(tx, hermezDb, cfg.zkCfg.L2RpcUrl, logPrefix)
 		if err != nil {
 			if errors.Is(err, ErrStateRootMismatch) {
 				panic(err)
@@ -282,7 +282,7 @@ func PruneL1SyncerStage(s *stagedsync.PruneState, tx kv.RwTx, cfg L1SyncerCfg, c
 	return nil
 }
 
-func verifyAgainstLocalBlocks(tx kv.RwTx, hermezDb *hermez_db.HermezDb, logPrefix string) (err error) {
+func verifyAgainstLocalBlocks(tx kv.RwTx, hermezDb *hermez_db.HermezDb, l2RpcUrl, logPrefix string) (err error) {
 	// get the highest hashed block
 	hashedBlockNo, err := stages.GetStageProgress(tx, stages.IntermediateHashes)
 	if err != nil {
@@ -354,7 +354,7 @@ func verifyAgainstLocalBlocks(tx kv.RwTx, hermezDb *hermez_db.HermezDb, logPrefi
 	}
 
 	if !sequencer.IsSequencer() {
-		err = blockComparison(tx, hermezDb, blockToCheck, logPrefix)
+		err = blockComparison(tx, hermezDb, blockToCheck, l2RpcUrl, logPrefix)
 		if err == nil {
 			log.Info(fmt.Sprintf("[%s] State root verified in block %d", logPrefix, blockToCheck))
 			if err := stages.SaveStageProgress(tx, stages.VerificationsStateRootCheck, verifiedBlockNo); err != nil {
@@ -366,7 +366,7 @@ func verifyAgainstLocalBlocks(tx kv.RwTx, hermezDb *hermez_db.HermezDb, logPrefi
 	return err
 }
 
-func blockComparison(tx kv.RwTx, hermezDb *hermez_db.HermezDb, blockNo uint64, logPrefix string) error {
+func blockComparison(tx kv.RwTx, hermezDb *hermez_db.HermezDb, blockNo uint64, l2RpcUrl, logPrefix string) error {
 	v, err := hermezDb.GetVerificationByL2BlockNo(blockNo)
 	if err != nil {
 		return fmt.Errorf("failed to get verification by l2 block no, %w", err)
@@ -383,6 +383,18 @@ func blockComparison(tx kv.RwTx, hermezDb *hermez_db.HermezDb, blockNo uint64, l
 	}
 
 	if v.StateRoot != block.Root() {
+		for tryCount := 0; tryCount < 5; tryCount++ {
+			stateRoot, err := GetL2BlockStateHashByNumber(l2RpcUrl, blockNo)
+			if err == nil {
+				if block.Root() == stateRoot {
+					log.Info("get L2BlockStateHashByNumber for block comparison", "block", blockNo)
+					return nil
+				}
+				break
+			}
+			log.Error(fmt.Sprintf("[%s] get L2BlockStateHashByNumber %d. failed %s", logPrefix, blockNo, err.Error()))
+			time.Sleep(time.Second * 5)
+		}
 		log.Error(fmt.Sprintf("[%s] State root mismatch in block %d. Local=0x%x, L1 verification=0x%x", logPrefix, blockNo, block.Root(), v.StateRoot))
 		return ErrStateRootMismatch
 	}

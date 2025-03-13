@@ -347,6 +347,13 @@ func prepareTickers(cfg *SequenceBlockCfg) (*time.Ticker, *time.Ticker, *time.Ti
 	return batchTicker, logTicker, blockTicker, infoTreeTicker
 }
 
+func checkMinBlockIntervalTime(start time.Time) {
+	tt := time.Now().Sub(start)
+	if tt < MinBlockIntervalTime {
+		time.Sleep(MinBlockIntervalTime - tt)
+	}
+}
+
 // will be called at the start of every new block created within a batch to figure out if there is a new GER
 // we can use or not.  In the special case that this is the first block we just return 0 as we need to use the
 // 0 index first before we can use 1+

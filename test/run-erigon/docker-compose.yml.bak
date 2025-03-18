@@ -1,0 +1,222 @@
+version: "3.5"
+networks:
+  default:
+    name: erigon
+services:
+
+  cdk-aggregator-db:
+    container_name: cdk-aggregator-db
+    image: postgres:15
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+        reservations:
+          memory: 1G
+    ports:
+      - 5434:5432
+    environment:
+      - POSTGRES_USER=aggregator_user
+      - POSTGRES_PASSWORD=aggregator_password
+      - POSTGRES_DB=aggregator_db
+    volumes:
+      - ./db/prover-db-init.sql:/docker-entrypoint-initdb.d/init.sql
+    command:
+      - "postgres"
+      - "-N"
+      - "500"
+
+  cdk-sequence-sender:
+    container_name: cdk-sequence-sender
+    image: ghcr.io/0xpolygon/cdk:0.5.0-beta10
+    build: .
+    volumes:
+      - ./data/seqsender:/tmp/cdk
+      - ./config/cdk.node.config.toml:/app/config.toml
+      - ./config/test.genesis.config.json:/app/genesis.json
+      - ./keystore/sequencer.keystore:/app/keystore/sequencer.keystore
+    command:
+      - "/bin/sh"
+      - "-c"
+      - "cdk-node run --cfg /app/config.toml --custom-network-file /app/genesis.json --components sequence-sender"
+
+  cdk-aggregator:
+    container_name: cdk-aggregator
+    image: ghcr.io/0xpolygon/cdk:0.5.0-beta10
+    ports:
+      - 50081:50081
+      - 9093:9091 # needed if metrics enabled
+    volumes:
+      - ./data/agg:/tmp/cdk
+      - ./config/cdk.node.config.toml:/app/config.toml
+      - ./config/test.genesis.config.json:/app/genesis.json
+      - ./keystore/aggregator.keystore:/app/keystore/aggregator.keystore
+    command:
+      - "/bin/sh"
+      - "-c"
+      - "cdk-node run --cfg /app/config.toml --custom-network-file /app/genesis.json  --components aggregator"
+
+  erigon-stateless-executor:
+    container_name: erigon-stateless-executor
+    image: hermeznetwork/zkevm-prover:v8.0.0-RC14-fork.12
+    platform: linux/amd64
+    ports:
+      - 50061:50061 # MT
+      - 50071:50071 # Executor
+    environment:
+      - EXPERIMENTAL_DOCKER_DESKTOP_FORCE_QEMU=1
+    volumes:
+      - ./config/test.stateless.executor.config.json:/usr/src/app/config.json
+    command: >
+      zkProver -c /usr/src/app/config.json
+
+  erigon-prover:
+    container_name: erigon-prover
+    image: hermeznetwork/zkevm-prover:v8.0.0-RC14-fork.12
+    platform: linux/amd64
+#    ports:
+#      - 50061:50061 # MT
+#      - 50071:50071 # Executor
+    environment:
+      - EXPERIMENTAL_DOCKER_DESKTOP_FORCE_QEMU=1
+    volumes:
+      - ./config/test.prover.config.json:/usr/src/app/config.json
+    command: >
+      zkProver -c /usr/src/app/config.json
+
+  erigon-seq:
+    container_name: erigon-seq
+    image: hermeznetwork/cdk-erigon:v2.60.0
+    environment:
+      - CDK_ERIGON_SEQUENCER=1
+    ports:
+      - 8123:8123
+      - 6900:6900
+    volumes:
+      - ./config/test.erigon.seq.config.yaml:/usr/src/app/config.yaml
+      - ./config/dynamic-mynetwork-allocs.json:/usr/src/app/dynamic-mynetwork-allocs.json
+      - ./config/dynamic-mynetwork-chainspec.json:/usr/src/app/dynamic-mynetwork-chainspec.json
+      - ./config/dynamic-mynetwork-conf.json:/usr/src/app/dynamic-mynetwork-conf.json
+      - ./erigon/data:/usr/src/app/data/
+    command: >
+      --http.vhosts=* --http.corsdomain=* --ws --config=/usr/src/app/config.yaml
+
+  erigon-rpc:
+    container_name: erigon-rpc
+    image: hermeznetwork/cdk-erigon:v2.60.0
+    environment:
+      - CDK_ERIGON_SEQUENCER=0
+    ports:
+      - 8124:8123
+      - 6901:6900
+    volumes:
+      - ./config/test.erigon.rpc.config.yaml:/usr/src/app/config.yaml
+      - ./config/dynamic-mynetwork-allocs.json:/usr/src/app/dynamic-mynetwork-allocs.json
+      - ./config/dynamic-mynetwork-chainspec.json:/usr/src/app/dynamic-mynetwork-chainspec.json
+      - ./config/dynamic-mynetwork-conf.json:/usr/src/app/dynamic-mynetwork-conf.json
+    command: >
+      --http.vhosts=* --http.corsdomain=* --ws --config=/usr/src/app/config.yaml
+
+  erigon-mock-l1-network:
+    container_name: erigon-mock-l1-network
+    image: ierent/cdk-validium-contracts:fork.12-geth1.13.11
+    ports:
+      - 8545:8545
+      - 8546:8546
+    command:
+      - "--http"
+      - "--http.api"
+      - "admin,eth,debug,miner,net,txpool,personal,web3"
+      - "--http.addr"
+      - "0.0.0.0"
+      - "--http.corsdomain"
+      - "*"
+      - "--http.vhosts"
+      - "*"
+      - "--ws"
+      - "--ws.origins"
+      - "*"
+      - "--ws.addr"
+      - "0.0.0.0"
+      - "--dev"
+      - "--dev.period"
+      - "1"
+      - "--datadir"
+      - "/geth_data"
+      - "--syncmode"
+      - "full"
+      - "--rpc.allow-unprotected-txs"
+
+  erigon-pool-db:
+    container_name: erigon-pool-db
+    image: postgres:15
+    ports:
+      - 5440:5432
+    volumes:
+      - /var/lib/postgresql/data
+    environment:
+      - POSTGRES_USER=pool_user
+      - POSTGRES_PASSWORD=pool_password
+      - POSTGRES_DB=pool_db
+    command:
+      - "postgres"
+      - "-N"
+      - "500"
+
+  erigon-pool-manager:
+    container_name: erigon-pool-manager
+    image: hermeznetwork/zkevm-pool-manager:v0.1.2
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+        reservations:
+          memory: 512M
+    ports:
+      - 8125:8545
+    volumes:
+      - ./config/test.poolmanager.toml:/app/poolmanager.toml
+    command:
+      - "/bin/sh"
+      - "-c"
+      - "/app/zkevm-pool-manager run --cfg /app/poolmanager.toml"
+
+  cdk-data-availability:
+    container_name: cdk-data-availability
+    restart: unless-stopped
+    image: 0xpolygon/cdk-data-availability:0.0.11
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+        reservations:
+          memory: 512M
+    ports:
+      - 8444:8444
+    volumes:
+      - ./config/test.data.availability.toml:/app/config.toml
+      - ./keystore/test-member.keystore:/pk/test-member.keystore
+    command:
+      - "/bin/sh"
+      - "-c"
+      - "/app/cdk-data-availability run --cfg /app/config.toml"
+
+  cdk-data-availability-db:
+    container_name: cdk-data-availability-db
+    restart: unless-stopped
+    image: postgres
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -d $${POSTGRES_DB} -U $${POSTGRES_USER}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    ports:
+      - 5438:5432
+    environment:
+      - POSTGRES_USER=committee_user
+      - POSTGRES_PASSWORD=committee_password
+      - POSTGRES_DB=committee_db
+    command:
+      - "postgres"
+      - "-N"
+      - "500"

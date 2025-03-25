@@ -256,6 +256,7 @@ func (m *Mapmutation) doCommit(tx kv.RwTx) error {
 	defer logEvery.Stop()
 	count := 0
 	total := float64(m.count)
+	fmt.Println("************* lyh *************", "BufferOptimalSize", etl.BufferOptimalSize)
 	for table, bucket := range m.puts {
 		collector := etl.NewCollector("", m.tmpdir, etl.NewSortableBuffer(etl.BufferOptimalSize/2), m.logger)
 		defer collector.Close()

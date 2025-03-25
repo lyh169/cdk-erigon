@@ -2,9 +2,11 @@ package stages
 
 import (
 	"fmt"
+	"time"
 
 	"github.com/ledgerwatch/erigon-lib/common"
 	"github.com/ledgerwatch/erigon-lib/kv"
+	"github.com/ledgerwatch/log/v3"
 
 	"math/big"
 
@@ -131,6 +133,8 @@ func finaliseBlock(
 
 	txInfos := []blockinfo.ExecutedTxInfo{}
 	builtBlockElements := batchState.blockState.builtBlockElements
+
+	start1 := time.Now()
 	for i, tx := range builtBlockElements.transactions {
 		var from common.Address
 		var err error
@@ -152,6 +156,7 @@ func finaliseBlock(
 			Signer:            &from,
 		})
 	}
+	start2 := time.Now()
 
 	if err := postBlockStateHandling(*batchContext.cfg, ibs, batchContext.sdb.hermezDb, newHeader, ger, l1BlockHash, parentBlock.Root(), txInfos); err != nil {
 		return nil, err
@@ -224,9 +229,12 @@ func finaliseBlock(
 	}
 
 	// now process the senders to avoid a stage by itself
+	start3 := time.Now()
 	if err := addSenders(*batchContext.cfg, newNum, finalTransactions, batchContext.sdb.tx, finalHeader); err != nil {
 		return nil, err
 	}
+	start4 := time.Now()
+	log.Info("********* lyh *****finaliseBlock", "BlockNumber", thisBlockNumber, "tx len", len(finalTransactions), "start2-start1", start2.Sub(start1), "start4-start3", start4.Sub(start3))
 
 	// now add in the zk batch to block references
 	if err := batchContext.sdb.hermezDb.WriteBlockBatch(newNum.Uint64(), batchState.batchNumber); err != nil {
@@ -299,6 +307,7 @@ func addSenders(
 	signer := types.MakeSigner(cfg.chainConfig, newNum.Uint64(), 0)
 	cryptoContext := secp256k1.ContextForThread(1)
 	senders := make([]common.Address, 0, len(finalTransactions))
+	start := time.Now()
 	for _, transaction := range finalTransactions {
 		from, err := signer.SenderWithContext(cryptoContext, transaction)
 		if err != nil {
@@ -306,6 +315,7 @@ func addSenders(
 		}
 		senders = append(senders, from)
 	}
+	log.Info("********* lyh *****addSenders", "BlockNumber", newNum.Uint64(), "tx len", len(finalTransactions), "start2-start1", time.Now().Sub(start))
 
 	return rawdb.WriteSenders(tx, finalHeader.Hash(), newNum.Uint64(), senders)
 }

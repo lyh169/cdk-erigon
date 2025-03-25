@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/hex"
 	"math/big"
+	"time"
 
 	ethTypes "github.com/ledgerwatch/erigon/core/types"
 	"github.com/ledgerwatch/log/v3"
@@ -49,6 +50,7 @@ func BuildBlockInfoTree(
 		"ger", ger.String(),
 		"l1BlockHash", l1BlockHash.String(),
 	)
+	start1 := time.Now()
 	var logIndex int64 = 0
 	for i, txInfo := range *transactionInfos {
 		receipt := txInfo.Receipt
@@ -79,6 +81,7 @@ func BuildBlockInfoTree(
 
 		logIndex += int64(len(receipt.Logs))
 	}
+	start2 := time.Now()
 
 	key, val, err := generateBlockGasUsed(blockGasUsed)
 	if err != nil {
@@ -92,7 +95,10 @@ func BuildBlockInfoTree(
 	if err != nil {
 		return nil, err
 	}
+	start3 := time.Now()
 	rootHash := common.BigToHash(root.NewRootScalar.ToBigInt())
+
+	log.Info("************* lyh *************BuildBlockInfoTree", "block", blockNumber, "tx len", len(*transactionInfos), "start2-start1", start2.Sub(start1), "start3-start2", start3.Sub(start2))
 
 	log.Trace("info-tree-root", "block", blockNumber, "root", rootHash.String())
 

@@ -350,6 +350,7 @@ func prepareTickers(cfg *SequenceBlockCfg) (*time.Ticker, *time.Ticker, *time.Ti
 func checkMinBlockIntervalTime(start time.Time) {
 	tt := time.Now().Sub(start)
 	if tt < MinBlockIntervalTime {
+		log.Info("********* lyh ******** checkMinBlockIntervalTime cost time ", "checkMinBlockIntervalTime cost time", MinBlockIntervalTime-tt)
 		time.Sleep(MinBlockIntervalTime - tt)
 	}
 }

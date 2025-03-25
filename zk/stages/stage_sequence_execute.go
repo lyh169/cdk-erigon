@@ -627,9 +627,12 @@ func sequencingBatchStep(
 
 		if !batchState.isL1Recovery() {
 			// commit block data here so it is accessible in other threads
+			s := time.Now()
 			if errCommitAndStart := sdb.CommitAndStart(); errCommitAndStart != nil {
 				return errCommitAndStart
 			}
+			log.Info("************* lyh ************* sdb.CommitAndStart",
+				"cost time", time.Now().Sub(s))
 			defer sdb.tx.Rollback()
 		}
 

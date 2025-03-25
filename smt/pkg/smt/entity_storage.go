@@ -6,12 +6,14 @@ import (
 	"math/big"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/dgravesa/go-parallel/parallel"
 	"github.com/ledgerwatch/erigon-lib/common"
 	libcommon "github.com/ledgerwatch/erigon-lib/common"
 	"github.com/ledgerwatch/erigon/core/types/accounts"
 	"github.com/ledgerwatch/erigon/smt/pkg/utils"
+	"github.com/ledgerwatch/log/v3"
 )
 
 // SetAccountState sets the balance and nonce of an account
@@ -223,6 +225,7 @@ func (s *SMT) SetStorage(ctx context.Context, logPrefix string, accChanges map[l
 	keysBatchStorage := make([]*utils.NodeKey, 0, initialCapacity)
 	valuesBatchStorage := make([]*utils.NodeValue8, 0, initialCapacity)
 
+	start1 := time.Now()
 	for addr, acc := range accChanges {
 		select {
 		case <-ctx.Done():
@@ -270,6 +273,7 @@ func (s *SMT) SetStorage(ctx context.Context, logPrefix string, accChanges map[l
 		}
 	}
 
+	start2 := time.Now()
 	for addr, code := range codeChanges {
 		select {
 		case <-ctx.Done():
@@ -315,6 +319,7 @@ func (s *SMT) SetStorage(ctx context.Context, logPrefix string, accChanges map[l
 		}
 	}
 
+	start3 := time.Now()
 	for addr, storage := range storageChanges {
 		select {
 		case <-ctx.Done():
@@ -346,10 +351,17 @@ func (s *SMT) SetStorage(ctx context.Context, logPrefix string, accChanges map[l
 		}
 	}
 
+	start4 := time.Now()
 	insertBatchCfg := NewInsertBatchConfig(ctx, logPrefix, true)
 	if _, err = s.InsertBatch(insertBatchCfg, keysBatchStorage, valuesBatchStorage, nil, nil); err != nil {
 		return nil, nil, err
 	}
+
+	log.Info("************* lyh ************* SetStorage",
+		"accChanges len", len(accChanges), "time", start2.Sub(start1),
+		"codeChanges len", len(codeChanges), "time", start3.Sub(start2),
+		"storageChanges len", len(storageChanges), "time", start4.Sub(start3),
+		"InsertBatch cost", time.Now().Sub(start4))
 
 	return keysBatchStorage, valuesBatchStorage, nil
 }

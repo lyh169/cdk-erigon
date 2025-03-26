@@ -615,9 +615,14 @@ func unwindZkSMT(ctx context.Context, logPrefix string, from, to uint64, db kv.R
 	stopPrinter()
 	printerStopped = true
 
+	start := time.Now()
 	if _, _, err := dbSmt.SetStorage(ctx, logPrefix, accChanges, codeChanges, storageChanges); err != nil {
 		return trie.EmptyRoot, err
 	}
+	log.Info("************* lyh ************* SetStorage unwindZkSMT end",
+		"accChanges len", len(accChanges), "from", from,
+		"codeChanges len", len(codeChanges), "to", to,
+		"storageChanges len", len(storageChanges), "time", time.Now().Sub(start))
 
 	if err := verifyLastHash(dbSmt, expectedRootHash, checkRoot, logPrefix, quiet); err != nil {
 		log.Error("failed to verify hash")

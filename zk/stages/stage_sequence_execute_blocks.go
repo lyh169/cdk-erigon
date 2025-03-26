@@ -319,3 +319,46 @@ func addSenders(
 
 	return rawdb.WriteSenders(tx, finalHeader.Hash(), newNum.Uint64(), senders)
 }
+
+//func addSenders(
+//	cfg SequenceBlockCfg,
+//	newNum *big.Int,
+//	finalTransactions types.Transactions,
+//	tx kv.RwTx,
+//	finalHeader *types.Header,
+//) error {
+//	signer := types.MakeSigner(cfg.chainConfig, newNum.Uint64(), 0)
+//	cryptoContext := secp256k1.ContextForThread(1)
+//	senders := make([]common.Address, len(finalTransactions))
+//
+//	start := time.Now()
+//	var errMutex sync.Mutex
+//	var gerr error
+//	nGoRoutines := runtime.NumCPU()
+//	txlen := len(finalTransactions)
+//	wg := sync.WaitGroup{}
+//	wg.Add(nGoRoutines)
+//	for j := 0; j < nGoRoutines; j++ {
+//		go func(n int) {
+//			defer wg.Done()
+//			for i := n; i < txlen; i += nGoRoutines {
+//				from, err := signer.SenderWithContext(cryptoContext, finalTransactions[i])
+//				if err != nil {
+//					errMutex.Lock()
+//					gerr = err
+//					errMutex.Unlock()
+//					return
+//				}
+//				senders[i] = from
+//			}
+//		}(j)
+//	}
+//	wg.Wait()
+//	if gerr != nil {
+//		return gerr
+//	}
+//
+//	log.Info("********* lyh *****addSenders1", "BlockNumber", newNum.Uint64(), "tx len", len(finalTransactions), "start2-start1", time.Now().Sub(start))
+//
+//	return rawdb.WriteSenders(tx, finalHeader.Hash(), newNum.Uint64(), senders)
+//}

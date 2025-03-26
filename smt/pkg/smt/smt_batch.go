@@ -8,6 +8,7 @@ import (
 	"github.com/dgravesa/go-parallel/parallel"
 	"github.com/ledgerwatch/erigon/smt/pkg/utils"
 	"github.com/ledgerwatch/erigon/zk"
+	"github.com/ledgerwatch/log/v3"
 )
 
 type InsertBatchConfig struct {
@@ -669,12 +670,17 @@ func (sdh *smtDfsHelper) destroy() {
 }
 
 func (sdh *smtDfsHelper) startConsumersLoop(s *SMT) error {
+	count := 0
+	defer func() {
+		log.Info("************* lyh ************* startConsumersLoop calc smt Insert db",
+			"Insert kv len", count)
+	}()
 	for {
 		dataStruct, ok := <-sdh.dataChan
 		if !ok {
 			return nil
 		}
-
+		count++
 		switch castedDataStruct := dataStruct.value.(type) {
 		case *utils.NodeKey:
 			if err := s.Db.InsertHashKey(*dataStruct.key, *castedDataStruct); err != nil {

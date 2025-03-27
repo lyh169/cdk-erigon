@@ -596,7 +596,16 @@ func sequencingBatchStep(
 			break
 		}
 
+		//if block, err = doFinishBlockAndUpdateState(batchContext, ibs, header, parentBlock, batchState, ger, l1BlockHash, l1TreeUpdateIndex, infoTreeIndexProgress, batchCounters); err != nil {
+		//	return err
+		//}
+		quit := batchContext.ctx.Done()
+		batchContext.sdb.eridb.OpenBatch(quit)
 		if block, err = doFinishBlockAndUpdateState(batchContext, ibs, header, parentBlock, batchState, ger, l1BlockHash, l1TreeUpdateIndex, infoTreeIndexProgress, batchCounters); err != nil {
+			batchContext.sdb.eridb.RollbackBatch()
+			return err
+		}
+		if err := batchContext.sdb.eridb.CommitBatch(); err != nil {
 			return err
 		}
 

@@ -476,6 +476,7 @@ func unwindZkSMT(ctx context.Context, logPrefix string, from, to uint64, db kv.R
 
 	// only open the batch if tx is not already one
 	if _, ok := db.(*membatchwithdb.MemoryMutation); !ok {
+		log.Info("************* lyh ************* enter OpenBatch unwindZkSMT")
 		eridb.OpenBatch(quit)
 	}
 

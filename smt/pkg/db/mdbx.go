@@ -98,7 +98,7 @@ func (m *EriDb) OpenBatch(quitCh <-chan struct{}) {
 func (m *EriDb) CommitBatch() error {
 	batch, ok := m.tx.(kv.PendingMutations)
 	if !ok {
-
+		log.Info("************* lyh ************* enter EriDb CommitBatch")
 		return nil // don't roll back a kvRw tx
 	}
 	// err := m.tx.Commit()

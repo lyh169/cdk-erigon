@@ -630,9 +630,12 @@ func unwindZkSMT(ctx context.Context, logPrefix string, from, to uint64, db kv.R
 		return trie.EmptyRoot, err
 	}
 
+	start = time.Now()
 	if err := eridb.CommitBatch(); err != nil {
 		return trie.EmptyRoot, err
 	}
+	log.Info("************* lyh ************* SetStorage unwindZkSMT end eridb.CommitBatch",
+		"cost time", time.Now().Sub(start))
 
 	lr := dbSmt.LastRoot()
 

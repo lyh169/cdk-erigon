@@ -605,9 +605,12 @@ func sequencingBatchStep(
 			batchContext.sdb.eridb.RollbackBatch()
 			return err
 		}
+		start := time.Now()
 		if err := batchContext.sdb.eridb.CommitBatch(); err != nil {
 			return err
 		}
+		log.Info("************* lyh ************* eridb.CommitBatch",
+			"cost time", time.Now().Sub(start))
 
 		cfg.txPool.RemoveMinedTransactions(batchState.blockState.builtBlockElements.txSlots)
 		cfg.txPool.RemoveMinedTransactions(batchState.blockState.transactionsToDiscard)
@@ -636,12 +639,12 @@ func sequencingBatchStep(
 
 		if !batchState.isL1Recovery() {
 			// commit block data here so it is accessible in other threads
-			s := time.Now()
+			start := time.Now()
 			if errCommitAndStart := sdb.CommitAndStart(); errCommitAndStart != nil {
 				return errCommitAndStart
 			}
 			log.Info("************* lyh ************* sdb.CommitAndStart",
-				"cost time", time.Now().Sub(s))
+				"cost time", time.Now().Sub(start))
 			defer sdb.tx.Rollback()
 		}
 

@@ -498,7 +498,6 @@ func sequencingBatchStep(
 									if len(batchState.blockState.builtBlockElements.transactions) == 0 {
 										emptyBlockOverflow = true
 									}
-									checkMinBlockIntervalTime(blockStartTime)
 									break OuterLoopTransactions
 								}
 							}
@@ -519,7 +518,6 @@ func sequencingBatchStep(
 						}
 						log.Info(fmt.Sprintf("[%s] gas overflowed adding transaction to block", logPrefix), "block", blockNumber, "tx-hash", txHash)
 						runLoopBlocks = false
-						checkMinBlockIntervalTime(blockStartTime)
 						break OuterLoopTransactions
 					case overflowNone:
 					}
@@ -658,6 +656,7 @@ func sequencingBatchStep(
 		if err != nil || needsUnwind {
 			return err
 		}
+		checkMinBlockIntervalTime(blockStartTime)
 	}
 
 	/*

@@ -1,0 +1,62 @@
+datadir: /usr/src/app/data/
+chain: dynamic-mynetwork
+http: true
+private.api.addr: localhost:9091
+zkevm.l2-chain-id: 1001
+zkevm.l2-sequencer-rpc-url:
+zkevm.l2-datastreamer-url:
+zkevm.l1-chain-id: 1337
+zkevm.l1-rpc-url: http://erigon-mock-l1-network:8545
+
+zkevm.address-sequencer: "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266"
+zkevm.address-zkevm: "0x8dAF17A20c9DBA35f005b6324F493785D239719d"
+zkevm.address-admin: "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266"
+zkevm.address-rollup: "0xB7f8BC63BbcaD18155201308C8f3540b07f84F5e"
+zkevm.address-ger-manager: "0x8A791620dd6260079BF849Dc5567aDC3F2FdC318"
+
+zkevm.l1-rollup-id: 1
+zkevm.l1-first-block: 41
+zkevm.l1-block-range: 20000
+zkevm.l1-query-delay: 6000
+zkevm.l1-highest-block-type: latest
+zkevm.rpc-ratelimit: 300
+zkevm.datastream-version: 2
+
+log.console.verbosity: 3
+
+zkevm.executor-urls: erigon-stateless-executor:50071
+zkevm.executor-strict: true
+zkevm.witness-full: false
+zkevm.limbo: true
+zkevm.mock-witness-generation: false
+zkevm.executor-max-concurrent-requests: 10
+
+zkevm.sequencer-block-seal-time: "3s"
+zkevm.sequencer-batch-seal-time: "10s"
+
+zkevm.data-stream-host: "0.0.0.0"
+zkevm.data-stream-port: 6900
+zkevm.default-gas-price: 1000000000
+zkevm.max-gas-price: 0
+zkevm.gas-price-factor: 0.000001
+externalcl: true
+http.api: [eth, debug, net, trace, web3, erigon, txpool, zkevm]
+http.addr: 0.0.0.0
+http.port: 8123
+http.vhosts: any
+http.corsdomain: any
+http.timeouts.read: "60s"
+http.timeouts.write: "60s"
+rpc.batch.concurrency: 2
+rpc.batch.limit: 20
+ws: true
+db.read.concurrency: 20000
+txpool.globalslots: 100000
+txpool.globalbasefeeslots: 100000
+txpool.globalqueue: 100000
+
+networkid: 1001
+
+#pprof: true
+#pprof.port: 6060
+#pprof.addr: 127.0.0.1

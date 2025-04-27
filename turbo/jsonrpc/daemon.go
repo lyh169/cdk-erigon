@@ -39,6 +39,9 @@ func APIList(db kv.RoDB, eth rpchelper.ApiBackend, txPool txpool.TxpoolClient, r
 	base.SetL2RpcUrl(ethCfg.Zk.L2RpcUrl)
 	base.SetGasless(ethCfg.AllowFreeTransactions)
 	ethImpl := NewEthAPI(base, db, eth, txPool, mining, cfg.Gascap, cfg.Feecap, cfg.ReturnDataLimit, ethCfg, cfg.AllowUnprotectedTxs, cfg.MaxGetProofRewindBlockCount, cfg.WebsocketSubscribeLogsChannelSize, logger, cfg.LogsMaxRange)
+	if sequencer.IsSequencer() && ethCfg.GasPriceCfg.Enable {
+		ethImpl.SetL2GasPricer(NewL2GasPricer(ethCfg.GasPriceCfg, ethImpl.BaseAPI, txPool, db))
+	}
 	erigonImpl := NewErigonAPI(base, db, eth)
 	txpoolImpl := NewTxPoolAPI(base, db, txPool, rawPool, rpcUrl)
 	netImpl := NewNetAPIImpl(eth)

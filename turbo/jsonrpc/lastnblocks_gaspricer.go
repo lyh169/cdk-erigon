@@ -23,9 +23,27 @@ const (
 	sampleNumber = 3 // Number of transactions sampled in a block.
 )
 
-func NewL2GasPricer(cfg *ethconfig.GasPriceConf, base *BaseAPI, txPool txpool.TxpoolClient, db kv.RoDB) *LastNL2BlocksGasPrice {
-	pricer := newLastNL2BlocksGasPriceSuggester(cfg, base, txPool, db)
-	go pricer.RunUpdateGasPrice()
+type L2GasPricer interface {
+	GetGasPrice() *big.Int
+	UpdateGasPriceAvg()
+}
+
+func NewL2GasPricer(ctx context.Context, cfg *ethconfig.GasPriceConf, base *BaseAPI, txPool txpool.TxpoolClient, db kv.RoDB) L2GasPricer {
+	pricer := newLastNL2BlocksGasPriceSuggester(ctx, cfg, base, txPool, db)
+	go func() {
+		up := cfg.UpdatePeriod
+		updateTimer := time.NewTimer(up)
+		for {
+			select {
+			case <-ctx.Done():
+				log.Info("Finishing l2 gas pricer...")
+				return
+			case <-updateTimer.C:
+				pricer.UpdateGasPriceAvg()
+				updateTimer.Reset(up)
+			}
+		}
+	}()
 	return pricer
 }
 
@@ -42,47 +60,24 @@ type LastNL2BlocksGasPrice struct {
 	maxPrice          *big.Int
 	minPrice          *big.Int
 	ignorePrice       *big.Int
-	//checkBlocks                int
-	//percentile                 int
-	//enableGasPriceDynamicDecay bool
-	//gasPriceDynamicDecayFactor float64
-	//globalPending              int
-	//globalPendingDynamicFactor float64
-	//pendingGasLimit            uint64
-	//updatePeriod               time.Duration
 
 	cacheLock sync.RWMutex
 	fetchLock sync.Mutex
 }
 
 // newLastNL2BlocksGasPriceSuggester init gas price suggester for last n l2 blocks strategy.
-func newLastNL2BlocksGasPriceSuggester(cfg *ethconfig.GasPriceConf, base *BaseAPI,
+func newLastNL2BlocksGasPriceSuggester(ctx context.Context, cfg *ethconfig.GasPriceConf, base *BaseAPI,
 	txPool txpool.TxpoolClient, db kv.RoDB) *LastNL2BlocksGasPrice {
 	return &LastNL2BlocksGasPrice{
 		BaseAPI:     base,
 		cfg:         cfg,
-		ctx:         context.Background(),
+		ctx:         ctx,
 		txPool:      txPool,
 		db:          db,
 		lastPrice:   big.NewInt(0).SetUint64(cfg.DefaultGasPrice),
 		maxPrice:    big.NewInt(0).SetUint64(cfg.MaxGasPrice),
 		minPrice:    big.NewInt(0).SetUint64(cfg.DefaultGasPrice),
 		ignorePrice: big.NewInt(0).SetUint64(cfg.IgnorePrice),
-	}
-}
-
-func (g *LastNL2BlocksGasPrice) RunUpdateGasPrice() {
-	log.Info("Starting run LastN l2 gas price suggester...")
-	updateTimer := time.NewTimer(g.cfg.UpdatePeriod)
-	for {
-		select {
-		case <-g.ctx.Done():
-			log.Info("Finishing LastN l2 gas price suggester...")
-			return
-		case <-updateTimer.C:
-			g.UpdateGasPriceAvg()
-			updateTimer.Reset(g.cfg.UpdatePeriod)
-		}
 	}
 }
 
@@ -139,7 +134,7 @@ func (g *LastNL2BlocksGasPrice) UpdateGasPriceAvg() {
 		})
 		price = results[(len(results)-1)*g.cfg.Percentile/100]
 	}
-	log.Info("Gasprice historical data spot check results", "len(results):", len(results), "percentile:",
+	log.Debug("Gasprice historical data spot check results", "len(results):", len(results), "percentile:",
 		g.cfg.Percentile, "checkBlocks:", g.cfg.CheckBlocks, "price:", price.Uint64())
 
 	if g.cfg.EnableGasPriceDynamicDecay {
@@ -151,7 +146,7 @@ func (g *LastNL2BlocksGasPrice) UpdateGasPriceAvg() {
 		// Dynamically reduce gas prices based on transaction pool idleness
 		if isIdle {
 			price = big.NewInt(int64(float64(price.Uint64()) * (1 - g.cfg.GasPriceDynamicDecayFactor)))
-			log.Info("Gas price dynamic decay", "before:", g.lastPrice, "after:", price)
+			log.Debug("Gas price dynamic decay", "before:", g.lastPrice, "after:", price)
 		}
 	}
 
@@ -167,7 +162,7 @@ func (g *LastNL2BlocksGasPrice) UpdateGasPriceAvg() {
 	g.lastL2BlockNumber = l2BlockNumber
 	g.cacheLock.Unlock()
 
-	log.Info("Setting gas prices", "block: ", g.lastL2BlockNumber, "l2 gas price:", g.lastPrice)
+	log.Debug("Setting gas prices", "block: ", g.lastL2BlockNumber, "l2 gas price:", g.lastPrice)
 }
 
 func (g *LastNL2BlocksGasPrice) GetGasPrice() *big.Int {
@@ -201,7 +196,7 @@ func (g *LastNL2BlocksGasPrice) IsTxPoolIdle(ctx context.Context) (bool, error) 
 	}
 
 	isIdle := uint64(sReply.PendingCount) < thresholdCount && totalPendingGas < g.cfg.PendingGasLimit
-	log.Info("IsTxPoolIdle", "is", isIdle,
+	log.Debug("IsTxPoolIdle", "is", isIdle,
 		"pendingCount:", sReply.PendingCount, "thresholdCount", thresholdCount,
 		"totalPendingGas", totalPendingGas, "pendingGasLimit", g.cfg.PendingGasLimit)
 

@@ -372,7 +372,7 @@ type APIImpl struct {
 	MaxGasPrice                   uint64
 	GasPriceFactor                float64
 	L1GasPrice                    L1GasPrice
-	L2GasPricer                   *LastNL2BlocksGasPrice
+	L2GasPricer                   L2GasPricer
 	SubscribeLogsChannelSize      int
 	logger                        log.Logger
 	VirtualCountersSmtReduction   float64
@@ -417,7 +417,7 @@ func NewEthAPI(base *BaseAPI, db kv.RoDB, eth rpchelper.ApiBackend, txPool txpoo
 	}
 }
 
-func (api *APIImpl) SetL2GasPricer(l2GasPricer *LastNL2BlocksGasPrice) {
+func (api *APIImpl) SetL2GasPricer(l2GasPricer L2GasPricer) {
 	api.L2GasPricer = l2GasPricer
 }
 

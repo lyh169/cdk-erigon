@@ -3,7 +3,7 @@ package jsonrpc
 import (
 	"context"
 	"math/big"
-	"sort"
+	"slices"
 	"sync"
 	"time"
 
@@ -129,9 +129,7 @@ func (g *LastNL2BlocksGasPrice) UpdateGasPriceAvg() {
 
 	price := lastPrice
 	if len(results) > 0 {
-		sort.Slice(results, func(i, j int) bool {
-			return results[i].Cmp(results[j]) < 0
-		})
+		slices.SortFunc(results, func(a, b *big.Int) int { return a.Cmp(b) })
 		price = results[(len(results)-1)*g.cfg.Percentile/100]
 	}
 	log.Debug("Gasprice historical data spot check results", "len(results):", len(results), "percentile:",
@@ -227,12 +225,14 @@ func (g *LastNL2BlocksGasPrice) getL2BlockTxsTips(ctx context.Context, l2BlockNu
 		return
 	}
 
-	sort.Slice(txs, func(i, j int) bool {
-		return txs[i].GetTip().Cmp(txs[j].GetTip()) < 0
+	sortedTxs := make([]types.Transaction, len(txs))
+	copy(sortedTxs, txs)
+	slices.SortFunc(sortedTxs, func(a, b types.Transaction) int {
+		return a.GetTip().Cmp(b.GetTip())
 	})
 
 	var prices []*big.Int
-	for _, tx := range txs {
+	for _, tx := range sortedTxs {
 		tip := tx.GetTip()
 		if ignorePrice != nil && tip.ToBig().Cmp(ignorePrice) == -1 {
 			continue

@@ -141,6 +141,7 @@ COMMANDS += verkle
 COMMANDS += evm
 COMMANDS += sentinel
 COMMANDS += acl
+COMMANDS += txpool_manager
 
 # build each command using %.cmd rule
 $(COMMANDS): %: %.cmd

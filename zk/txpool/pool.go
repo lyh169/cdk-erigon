@@ -237,6 +237,7 @@ type metaTx struct {
 
 func newMetaTx(slot *types.TxSlot, isLocal bool, timestmap uint64) *metaTx {
 	mt := &metaTx{Tx: slot, worstIndex: -1, bestIndex: -1, timestamp: timestmap, created: uint64(time.Now().Unix())}
+	log.Info("[txpool] newMetaTx lyh", "txhash", hexutils.BytesToHex(slot.IDHash[:]), "created", uint64(time.Now().Unix()))
 	if isLocal {
 		mt.subPool = IsLocal
 	}
@@ -1847,7 +1848,7 @@ func (p *TxPool) purge() {
 
 	// go through all transactions and remove the ones that have a timestamp older than the purge time in config
 	cutOff := uint64(time.Now().Add(-p.cfg.PurgeDistance).Unix())
-	log.Debug("[txpool] purging", "cutOff", cutOff)
+	log.Info("[txpool] purging lyh", "cutOff", cutOff, "p.cfg.PurgeDistance", p.cfg.PurgeDistance)
 
 	toDelete := make([]*metaTx, 0)
 
@@ -1856,6 +1857,7 @@ func (p *TxPool) purge() {
 		if mt.currentSubPool == PendingSubPool {
 			return true
 		}
+		log.Info("[txpool] purging lyh", "created", mt.created, "cutOff", cutOff, "txhash", hexutils.BytesToHex(mt.Tx.IDHash[:]), "p.cfg.PurgeDistance", p.cfg.PurgeDistance)
 		if mt.created < cutOff {
 			toDelete = append(toDelete, mt)
 		}
@@ -1885,7 +1887,7 @@ func (p *TxPool) purge() {
 		if checkAddr, ok := p.senders.senderID2Addr[mt.Tx.SenderID]; ok {
 			addr = checkAddr
 		}
-		log.Debug("[txpool] purge",
+		log.Info("[txpool] purge lyh",
 			"sender", addr,
 			"hash", hex.EncodeToString(mt.Tx.IDHash[:]),
 			"ts", mt.created)

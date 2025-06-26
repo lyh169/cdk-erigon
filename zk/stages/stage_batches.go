@@ -819,7 +819,7 @@ func getHighestDSL2Block(ctx context.Context, batchCfg BatchesCfg, latestFork ui
 	// This is so we can keep the logic simple and just dispose of the connection when we're done
 	// greatly simplifying state juggling of the connection if it errors
 	dsClient := buildNewStreamClient(ctx, batchCfg, latestFork)
-	if err = dsClient.Start(); err != nil {
+	if err := dsClient.Start(); err != nil {
 		return 0, err
 	}
 	defer func() {

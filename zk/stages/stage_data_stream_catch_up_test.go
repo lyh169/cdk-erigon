@@ -6,7 +6,7 @@ import (
 	"os"
 	"testing"
 
-	"github.com/0xPolygonHermez/zkevm-data-streamer/datastreamer"
+	"github.com/gateway-fm/zkevm-data-streamer/datastreamer"
 	"github.com/ledgerwatch/erigon-lib/common"
 	"github.com/ledgerwatch/erigon-lib/kv/memdb"
 	"github.com/ledgerwatch/erigon/core/rawdb"

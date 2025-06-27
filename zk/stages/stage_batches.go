@@ -26,8 +26,8 @@ import (
 	"github.com/ledgerwatch/erigon/core/rawdb"
 	"github.com/ledgerwatch/erigon/core/state"
 	"github.com/ledgerwatch/erigon/eth/ethconfig"
-	"github.com/ledgerwatch/log/v3"
 	"github.com/ledgerwatch/erigon/zk/datastream/client"
+	"github.com/ledgerwatch/log/v3"
 )
 
 const (
@@ -60,6 +60,7 @@ type HermezDb interface {
 
 type DatastreamClient interface {
 	RenewEntryChannel()
+	RenewMaxEntryChannel()
 	ReadAllEntriesToChannel() error
 	StopReadingToChannel()
 	GetEntryChan() *chan interface{}
@@ -68,7 +69,6 @@ type DatastreamClient interface {
 	GetProgressAtomic() *atomic.Uint64
 	Start() error
 	Stop() error
-	PrepUnwind()
 	HandleStart() error
 }
 
@@ -835,5 +835,5 @@ func getHighestDSL2Block(ctx context.Context, batchCfg BatchesCfg, latestFork ui
 
 func buildNewStreamClient(ctx context.Context, batchesCfg BatchesCfg, latestFork uint16) *client.StreamClient {
 	cfg := batchesCfg.zkCfg
-	return client.NewClient(ctx, cfg.L2DataStreamerUrl, cfg.L2DataStreamerUseTLS, cfg.DatastreamVersion, cfg.L2DataStreamerTimeout, latestFork)
+	return client.NewClient(ctx, cfg.L2DataStreamerUrl, cfg.L2DataStreamerUseTLS, cfg.L2DataStreamerTimeout, latestFork, client.DefaultEntryChannelSize)
 }

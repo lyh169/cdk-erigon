@@ -37,6 +37,7 @@ require (
 	github.com/deckarep/golang-set v1.8.0
 	github.com/deckarep/golang-set/v2 v2.3.1
 	github.com/dgravesa/go-parallel v0.6.0
+	github.com/didip/tollbooth/v6 v6.1.2
 	github.com/docker/docker v26.1.0+incompatible
 	github.com/dop251/goja v0.0.0-20230122112309-96b1610dd4f7
 	github.com/dustin/go-humanize v1.0.1
@@ -174,11 +175,11 @@ require (
 	github.com/francoispqt/gojay v1.2.13 // indirect
 	github.com/fsnotify/fsnotify v1.6.0 // indirect
 	github.com/garslo/gogen v0.0.0-20170307003452-d6ebae628c7c // indirect
-	github.com/go-delve/delve v1.21.2 // indirect
 	github.com/go-llsqlite/adapter v0.0.0-20230927005056-7f5ce7f0c916 // indirect
 	github.com/go-llsqlite/crawshaw v0.4.0 // indirect
 	github.com/go-logr/logr v1.2.4 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
+	github.com/go-pkgz/expirable-cache v0.0.3 // indirect
 	github.com/go-sourcemap/sourcemap v2.1.3+incompatible // indirect
 	github.com/go-task/slim-sprig v0.0.0-20230315185526-52ccab3ef572 // indirect
 	github.com/godbus/dbus/v5 v5.1.0 // indirect

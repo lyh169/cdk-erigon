@@ -12,7 +12,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/ledgerwatch/erigon-lib/config3"
@@ -48,6 +47,7 @@ import (
 	grpcHealth "google.golang.org/grpc/health"
 	"google.golang.org/grpc/health/grpc_health_v1"
 
+	"github.com/didip/tollbooth/v6"
 	libcommon "github.com/ledgerwatch/erigon-lib/common"
 	"github.com/ledgerwatch/erigon/cmd/rpcdaemon/cli/httpcfg"
 	"github.com/ledgerwatch/erigon/cmd/rpcdaemon/graphql"
@@ -74,7 +74,6 @@ import (
 	// Force-load native and js packages, to trigger registration
 	_ "github.com/ledgerwatch/erigon/eth/tracers/js"
 	_ "github.com/ledgerwatch/erigon/eth/tracers/native"
-	"golang.org/x/time/rate"
 )
 
 var rootCmd = &cobra.Command{
@@ -885,8 +884,11 @@ func createHandler(cfg httpcfg.HttpCfg, apiList []rpc.API, httpHandler, wsHandle
 
 		httpHandler.ServeHTTP(w, r)
 	})
-	handler = RateLimitMiddleware(handler, 100, 500)
 
+	if cfg.RpcRateLimits > 0 {
+		lmt := tollbooth.NewLimiter(float64(cfg.RpcRateLimits), nil)
+		handler = tollbooth.LimitFuncHandler(lmt, handler.ServeHTTP)
+	}
 	return handler, nil
 }
 
@@ -1078,97 +1080,4 @@ func (e *remoteConsensusEngine) GenerateSeal(_ consensus.ChainHeaderReader, _ *t
 
 func (e *remoteConsensusEngine) APIs(_ consensus.ChainHeaderReader) []rpc.API {
 	panic("remoteConsensusEngine.APIs not supported")
-}
-
-type timestampedLimiter struct {
-	limiter  *rate.Limiter
-	lastUsed time.Time
-}
-
-type IPRateLimiter struct {
-	ips        map[string]*timestampedLimiter
-	mu         *sync.RWMutex
-	rateLimit  rate.Limit
-	burstLimit int
-}
-
-func NewIPRateLimiter(rps int, burst int) *IPRateLimiter {
-	return &IPRateLimiter{
-		ips:        make(map[string]*timestampedLimiter),
-		mu:         &sync.RWMutex{},
-		rateLimit:  rate.Limit(rps),
-		burstLimit: burst,
-	}
-}
-
-func (i *IPRateLimiter) GetLimiter(ip string) *timestampedLimiter {
-	i.mu.Lock()
-	defer i.mu.Unlock()
-
-	for ip, limiter := range i.ips {
-		if time.Since(limiter.lastUsed) > 5*time.Minute {
-			delete(i.ips, ip)
-		}
-	}
-
-	limiter, exists := i.ips[ip]
-	if !exists {
-		limiter = &timestampedLimiter{
-			limiter:  rate.NewLimiter(i.rateLimit, i.burstLimit),
-			lastUsed: time.Now(),
-		}
-		i.ips[ip] = limiter
-	}
-
-	return limiter
-}
-
-func (i *IPRateLimiter) UpdateLastUsed(ip string) {
-	i.mu.Lock()
-	defer i.mu.Unlock()
-
-	if limiter, exists := i.ips[ip]; exists {
-		limiter.lastUsed = time.Now()
-	}
-}
-
-func RateLimitMiddleware(next http.Handler, rps int, burst int) http.Handler {
-	limiter := NewIPRateLimiter(rps, burst)
-	go func() {
-		ticker := time.NewTicker(1 * time.Minute)
-		defer ticker.Stop()
-
-		for range ticker.C {
-			limiter.mu.Lock()
-			for ip, tLimiter := range limiter.ips {
-				if time.Since(tLimiter.lastUsed) > 5*time.Minute {
-					delete(limiter.ips, ip)
-				}
-			}
-			limiter.mu.Unlock()
-		}
-	}()
-
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		ip := r.RemoteAddr
-		if forwarded := r.Header.Get("X-Forwarded-For"); forwarded != "" {
-			ips := strings.Split(forwarded, ",")
-			if len(ips) > 0 {
-				ip = strings.TrimSpace(ips[0])
-			}
-		} else {
-			if colonIndex := strings.LastIndex(ip, ":"); colonIndex != -1 {
-				ip = ip[:colonIndex]
-			}
-		}
-
-		tLimiter := limiter.GetLimiter(ip)
-		if !tLimiter.limiter.Allow() {
-			http.Error(w, "Too many requests", http.StatusTooManyRequests)
-			return
-		}
-
-		limiter.UpdateLastUsed(ip)
-		next.ServeHTTP(w, r)
-	})
 }

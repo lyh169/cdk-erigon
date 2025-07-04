@@ -327,7 +327,7 @@ func (c *StreamClient) Stop() error {
 // Returns the current status of the header.
 // If started, terminate the connection.
 func (c *StreamClient) GetHeader() (*types.HeaderEntry, error) {
-	log.Info("[Datastream client] Getting header", "client", c.conn)
+	log.Debug("[Datastream client] Getting header")
 	if err := c.stopStreaming(); err != nil {
 		return nil, fmt.Errorf("stopStreaming: %w", err)
 	}

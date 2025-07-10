@@ -182,10 +182,10 @@ func (sCfg *SequenceBlockCfg) toErigonExecuteBlockCfg() stagedsync.ExecuteBlockC
 
 func validateIfDatastreamIsAheadOfExecution(
 	s *stagedsync.StageState,
-// u stagedsync.Unwinder,
+	// u stagedsync.Unwinder,
 	ctx context.Context,
 	cfg SequenceBlockCfg,
-// historyCfg stagedsync.HistoryCfg,
+	// historyCfg stagedsync.HistoryCfg,
 ) error {
 	roTx, err := cfg.db.BeginRo(ctx)
 	if err != nil {
@@ -369,6 +369,13 @@ func prepareL1AndInfoTreeRelatedStuff(logPrefix string, sdb *stageDb, batchState
 	}
 
 	return
+}
+
+func checkMinBlockIntervalTime(start time.Time) {
+	tt := time.Now().Sub(start)
+	if tt < MinBlockIntervalTime {
+		time.Sleep(MinBlockIntervalTime - tt)
+	}
 }
 
 // will be called at the start of every new block created within a batch to figure out if there is a new GER

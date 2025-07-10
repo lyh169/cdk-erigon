@@ -21,6 +21,10 @@ import (
 	"github.com/ledgerwatch/erigon/zk/utils"
 )
 
+const (
+	MinBlockIntervalTime = time.Second
+)
+
 var shouldCheckForExecutionAndDataStreamAlignment = true
 
 func SpawnSequencingStage(
@@ -245,6 +249,7 @@ func sequencingBatchStep(
 		log.Info(fmt.Sprintf("[%s] Starting block %d (forkid %v)...", logPrefix, blockNumber, batchState.forkId))
 		logTicker.Reset(10 * time.Second)
 		blockTimer := time.NewTimer(cfg.zk.SequencerBlockSealTime)
+		blockStartTime := time.Now()
 		ethBlockGasPool := new(core.GasPool).AddGas(transactionGasLimit) // used only in normalcy mode per block
 
 		if batchState.isL1Recovery() {
@@ -733,6 +738,8 @@ func sequencingBatchStep(
 		if _, err := rawdb.IncrementStateVersionByBlockNumberIfNeeded(batchContext.sdb.tx, block.NumberU64()); err != nil {
 			return fmt.Errorf("writing plain state version: %w", err)
 		}
+
+		checkMinBlockIntervalTime(blockStartTime)
 
 		// notify the done hook that we have finished processing this block - will notify subscribers etc.
 		// here we -1 the block number as we know we have just created a new block so can simulate that the last block notified

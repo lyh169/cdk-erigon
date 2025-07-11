@@ -25,6 +25,11 @@ func (api *APIImpl) GasPrice(ctx context.Context) (*hexutil.Big, error) {
 	}
 	chainId := cc.ChainID
 	if !api.isZkNonSequencer(chainId) {
+		if api.L2GasPricer != nil {
+			price := api.L2GasPricer.GetGasPrice()
+			return (*hexutil.Big)(price), nil
+		}
+
 		price, err := api.gasTracker.GetLatestPrice()
 		if err != nil {
 			return nil, err

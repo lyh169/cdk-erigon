@@ -21,6 +21,10 @@ import (
 	"github.com/ledgerwatch/erigon/zk/utils"
 )
 
+const (
+	MinBlockIntervalTime = time.Second
+)
+
 var shouldCheckForExecutionAndDataStreamAlignment = true
 
 func SpawnSequencingStage(
@@ -733,6 +737,8 @@ func sequencingBatchStep(
 		if _, err := rawdb.IncrementStateVersionByBlockNumberIfNeeded(batchContext.sdb.tx, block.NumberU64()); err != nil {
 			return fmt.Errorf("writing plain state version: %w", err)
 		}
+
+		checkMinBlockIntervalTime(startTime)
 
 		// notify the done hook that we have finished processing this block - will notify subscribers etc.
 		// here we -1 the block number as we know we have just created a new block so can simulate that the last block notified

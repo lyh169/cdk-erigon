@@ -375,6 +375,7 @@ func checkMinBlockIntervalTime(start time.Time) {
 	tt := time.Now().Sub(start)
 	if tt < MinBlockIntervalTime {
 		time.Sleep(MinBlockIntervalTime - tt)
+		log.Debug("checkMinBlockIntervalTime", "sleep time", MinBlockIntervalTime-tt)
 	}
 }
 

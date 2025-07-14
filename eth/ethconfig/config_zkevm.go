@@ -67,6 +67,7 @@ type Zk struct {
 	GasPriceFactor                         float64
 	GasPriceCheckFrequency                 time.Duration
 	GasPriceHistoryCount                   uint64
+	GasPriceCfg                            *GasPriceConf
 	DAUrl                                  string
 	DataStreamHost                         string
 	DataStreamPort                         uint

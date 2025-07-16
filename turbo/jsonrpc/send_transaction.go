@@ -85,10 +85,14 @@ func (api *APIImpl) SendRawTransaction(ctx context.Context, encodedTx hexutility
 	}
 
 	// check if the price is too low if we are set to reject low gas price transactions
+	lowestPrice := big.NewInt(int64(api.DefaultGasPrice))
+	if api.L2GasPricer == nil && api.gasTracker.GetLowestPrice() != nil {
+		lowestPrice = api.gasTracker.GetLowestPrice()
+	}
 	if api.RejectLowGasPriceTransactions &&
 		ShouldRejectLowGasPrice(
 			txn.GetPrice().ToBig(),
-			api.gasTracker.GetLowestPrice(),
+			lowestPrice,
 			api.RejectLowGasPriceTolerance,
 		) {
 		return common.Hash{}, errors.New("transaction price is too low")

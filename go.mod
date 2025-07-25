@@ -42,6 +42,7 @@ require (
 	github.com/dustin/go-humanize v1.0.1
 	github.com/edsrzf/mmap-go v1.1.0
 	github.com/emicklei/dot v1.6.1
+	github.com/fatih/color v1.13.0
 	github.com/fjl/gencodec v0.0.0-20220412091415-8bb9e558978c
 	github.com/gateway-fm/vectorized-poseidon-gold v1.0.0
 	github.com/gballet/go-verkle v0.0.0-20221121182333-31427a1f2d35

@@ -1,0 +1,4 @@
+l2Url: "http://127.0.0.1:8123"
+datastreamUrl: "127.0.0.1:6900"
+version: 2
+logLevel: info

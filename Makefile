@@ -142,6 +142,7 @@ COMMANDS += evm
 COMMANDS += sentinel
 COMMANDS += acl
 COMMANDS += txpool_manager
+COMMANDS += datastreamer
 
 # build each command using %.cmd rule
 $(COMMANDS): %: %.cmd
